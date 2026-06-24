@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict ZWjA7UglVWbpTAQVC0GIBw6ZVBUgQ9SyWXi1aWIZwfHrMyIyb66UnGdc8IDfooG
+\restrict mmwUd026XhEJDK2WO2zGw1aRpI8ORYR3TGjPttdEKAlTTjLRjDSYpUD7ex79W8R
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 17.6
@@ -4973,6 +4973,7 @@ fbda0ad6-9db2-4f70-9f32-c1bc397f6245	35fac0b9-1ae9-4f97-b8eb-089b10f07ca4	retail
 2a0897d5-a9e7-492b-bc76-7d6cd3d4d9c7	5a1962b7-bc7e-4011-bd3c-00fb7620055e	retail	450	400	auto	\N	2026-06-24 12:46:54.935634+00
 8e315f9b-7aee-4817-af36-2dd889df5c01	32322628-aca1-4280-8a83-8a4133546bbb	retail	180	160	auto	\N	2026-06-24 12:46:54.935634+00
 5b7e7a63-cdaa-4e4b-b1c6-30db06b50d56	ec838c05-8951-4a5d-b931-883d80429ccc	retail	360	250	auto	\N	2026-06-24 12:46:54.935634+00
+e065a5b8-d756-4c36-85da-dedb58d6c303	5635d13d-2ae8-49e4-b39b-fb330115cdae	purchase	0	70	auto	\N	2026-06-24 18:35:57.127789+00
 \.
 
 
@@ -5665,7 +5666,6 @@ COPY public.product_suppliers (product_id, supplier_id, is_preferred, is_blocked
 --
 
 COPY public.products (id, name, category, unit, retail_price, wholesale_price, purchase_cost, price_multiplier, market_ceiling, margin_floor, epos_now_id, is_active, created_at, updated_at, case_size, weekly_units, wins_dismissed_cost, default_supplier_id, is_loss_leader, needs_review, weekly_units_recent, default_unit_type) FROM stdin;
-5635d13d-2ae8-49e4-b39b-fb330115cdae	Carrot Bag 1KG	veg	bag	100	0	0	2.00	\N	0.20	47064979	t	2026-06-09 09:55:33.705033+00	2026-06-09 10:04:27.362036+00	1	37	\N	\N	f	f	\N	\N
 5a1962b7-bc7e-4011-bd3c-00fb7620055e	Watermelon Small	fruit	each	400	0	350	2.00	\N	0.20	52207693	t	2026-06-09 10:04:27.369066+00	2026-06-24 13:05:33.593509+00	1	0	\N	\N	f	f	15	\N
 5d5fd9f2-5232-4eb5-9c12-7e6d58058849	Mushroom Regular	veg	kg	458	0	229	2.00	\N	0.20	4590129	t	2026-05-29 14:26:12.157548+00	2026-06-24 18:19:29.142773+00	1	19	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	6	box
 e2838162-83b6-41d9-85c2-d04f4f445967	Lemon	fruit	each	48	0	35	2.00	\N	0.20	4577796	t	2026-05-20 09:10:04.371843+00	2026-06-23 02:07:04.126057+00	64	46	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	65	retail_unit
@@ -5681,6 +5681,7 @@ df8d618e-d7da-4755-b47c-b89217b80d50	Grapes	fruit	punnet	239	0	179	2.00	\N	0.20	
 ed61eae5-7212-4ab0-8b27-a0a267e3936b	Melon Honeydew	fruit	each	280	0	155	2.00	\N	0.20	7516789	t	2026-05-20 09:10:04.617715+00	2026-06-22 08:37:04.025032+00	8	13	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	13	box
 d85d0d21-166f-4fcb-967d-df877ee9b56a	Banana	fruit	kg	149	0	103	2.00	\N	0.20	4577782	t	2026-05-20 09:10:04.371843+00	2026-06-24 18:19:29.142773+00	1	74	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	97	box
 f1ecc381-a61e-4c97-b231-b34133f7d69d	Tomato	veg	kg	399	0	156	2.00	\N	0.20	4590157	t	2026-05-20 09:10:04.371843+00	2026-06-24 07:58:32.505961+00	9	31	\N	aaaaaaaa-0001-0000-0000-000000000001	f	f	26	box
+5635d13d-2ae8-49e4-b39b-fb330115cdae	Carrot Bag 1KG	veg	bag	100	0	70	2.00	\N	0.20	47064979	t	2026-06-09 09:55:33.705033+00	2026-06-24 18:35:57.127789+00	1	37	\N	\N	f	f	\N	\N
 3a16ee54-794e-4622-873c-e08b055b60cb	Sweet Pepper	veg	each	100	0	0	2.00	\N	0.20	\N	f	2026-06-09 10:04:27.369645+00	2026-06-09 16:55:28.365381+00	1	0	\N	\N	f	f	\N	\N
 78752bde-835e-446f-9c0b-fb18fd09f095	Broccoli	veg	each	100	0	45	2.00	\N	0.20	\N	t	2026-05-20 09:10:04.371843+00	2026-06-09 00:04:15.135306+00	1	\N	\N	\N	f	f	\N	\N
 05f8f1e4-6616-4720-a999-15b76493989f	Cauliflower	veg	each	120	0	55	2.00	\N	0.20	\N	t	2026-05-20 09:10:04.371843+00	2026-06-09 00:04:15.135306+00	1	\N	\N	\N	f	f	\N	\N
@@ -18948,5 +18949,5 @@ ALTER EVENT TRIGGER pgrst_drop_watch OWNER TO supabase_admin;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict ZWjA7UglVWbpTAQVC0GIBw6ZVBUgQ9SyWXi1aWIZwfHrMyIyb66UnGdc8IDfooG
+\unrestrict mmwUd026XhEJDK2WO2zGw1aRpI8ORYR3TGjPttdEKAlTTjLRjDSYpUD7ex79W8R
 
