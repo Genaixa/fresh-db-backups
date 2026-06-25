@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict mmwUd026XhEJDK2WO2zGw1aRpI8ORYR3TGjPttdEKAlTTjLRjDSYpUD7ex79W8R
+\restrict 2l3ZOsRZQoeV8kg8ZqdnymyVbRqz308Df4G31gGpults2O7A8aOyen5VY5q7ymV
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 17.6
@@ -2145,6 +2145,20 @@ CREATE TABLE public.price_suggestions (
 ALTER TABLE public.price_suggestions OWNER TO postgres;
 
 --
+-- Name: product_epos_aliases; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.product_epos_aliases (
+    epos_product_id text NOT NULL,
+    product_id uuid NOT NULL,
+    note text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.product_epos_aliases OWNER TO postgres;
+
+--
 -- Name: purchase_invoice_items; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -2295,6 +2309,7 @@ CREATE TABLE public.products (
     needs_review boolean DEFAULT false NOT NULL,
     weekly_units_recent integer,
     default_unit_type text,
+    plu_code integer,
     CONSTRAINT products_default_unit_type_check CHECK ((default_unit_type = ANY (ARRAY['box'::text, 'retail_unit'::text])))
 );
 
@@ -2306,6 +2321,13 @@ ALTER TABLE public.products OWNER TO postgres;
 --
 
 COMMENT ON COLUMN public.products.default_unit_type IS 'Most-common wholesale_order_items.unit_type for this product across all customers; seeds the portal line-default for customers with no own history. Maintained by trg_product_default_unit.';
+
+
+--
+-- Name: COLUMN products.plu_code; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.products.plu_code IS 'Scale PLU embedded in weigh-by-label barcodes; resolves a scanned label to this product. Null = not sold by scale label.';
 
 
 --
@@ -2329,20 +2351,6 @@ CREATE VIEW public.product_weighted_costs WITH (security_invoker='on') AS
 
 
 ALTER VIEW public.product_weighted_costs OWNER TO postgres;
-
---
--- Name: purchase_suppliers; Type: TABLE; Schema: public; Owner: postgres
---
-
-CREATE TABLE public.purchase_suppliers (
-    id uuid DEFAULT extensions.uuid_generate_v4() NOT NULL,
-    name text NOT NULL,
-    is_active boolean DEFAULT true NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
-ALTER TABLE public.purchase_suppliers OWNER TO postgres;
 
 --
 -- Name: sales_data; Type: TABLE; Schema: public; Owner: postgres
@@ -2452,12 +2460,20 @@ CREATE TABLE public.till_transactions (
     cash_tendered_pence integer,
     change_pence integer,
     status text DEFAULT 'completed'::text NOT NULL,
+    client_uuid uuid,
     CONSTRAINT till_transactions_payment_method_check CHECK ((payment_method = ANY (ARRAY['cash'::text, 'card'::text, 'mixed'::text]))),
     CONSTRAINT till_transactions_status_check CHECK ((status = ANY (ARRAY['completed'::text, 'voided'::text])))
 );
 
 
 ALTER TABLE public.till_transactions OWNER TO postgres;
+
+--
+-- Name: COLUMN till_transactions.client_uuid; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.till_transactions.client_uuid IS 'Client-generated idempotency key for offline-first sync; a sale with an existing client_uuid is ignored (already recorded).';
+
 
 --
 -- Name: user_profiles; Type: TABLE; Schema: public; Owner: postgres
@@ -3015,6 +3031,8 @@ COPY auth.audit_log_entries (instance_id, id, payload, created_at, ip_address) F
 00000000-0000-0000-0000-000000000000	cb3d229a-6cb8-4da4-8e56-7f032652d328	{"action":"token_revoked","actor_id":"13ffd63f-768b-42f2-b487-2238df8fba1b","actor_username":"david@freshandfruity.co.uk","actor_via_sso":false,"log_type":"token"}	2026-06-24 14:01:51.104749+00	
 00000000-0000-0000-0000-000000000000	467da5c9-e9e3-4ee1-b2b2-8f220511c878	{"action":"token_refreshed","actor_id":"13ffd63f-768b-42f2-b487-2238df8fba1b","actor_username":"david@freshandfruity.co.uk","actor_via_sso":false,"log_type":"token"}	2026-06-24 16:09:58.500625+00	
 00000000-0000-0000-0000-000000000000	e511f8c2-decd-473c-ae8c-2b5677ff524b	{"action":"token_revoked","actor_id":"13ffd63f-768b-42f2-b487-2238df8fba1b","actor_username":"david@freshandfruity.co.uk","actor_via_sso":false,"log_type":"token"}	2026-06-24 16:09:58.502442+00	
+00000000-0000-0000-0000-000000000000	6b4c66a5-3428-4460-8419-3d875a3e0ad7	{"action":"token_refreshed","actor_id":"13ffd63f-768b-42f2-b487-2238df8fba1b","actor_username":"david@freshandfruity.co.uk","actor_via_sso":false,"log_type":"token"}	2026-06-24 18:53:54.083987+00	
+00000000-0000-0000-0000-000000000000	5b651378-13a6-42d7-bb58-33b47e285ca9	{"action":"token_revoked","actor_id":"13ffd63f-768b-42f2-b487-2238df8fba1b","actor_username":"david@freshandfruity.co.uk","actor_via_sso":false,"log_type":"token"}	2026-06-24 18:53:54.0862+00	
 \.
 
 
@@ -3152,6 +3170,7 @@ COPY auth.refresh_tokens (instance_id, id, token, user_id, revoked, created_at, 
 00000000-0000-0000-0000-000000000000	4	dklftb46hkhc	d8385f7d-1f57-47f5-9570-8f082c5214b4	f	2026-05-20 09:15:45.142327+00	2026-05-20 09:15:45.142327+00	\N	117963d7-1874-4c76-b125-17abf20ebcc8
 00000000-0000-0000-0000-000000000000	5	pf4niumeyffa	d8385f7d-1f57-47f5-9570-8f082c5214b4	f	2026-05-20 09:15:53.620614+00	2026-05-20 09:15:53.620614+00	\N	2fa622d4-ae8b-43b6-8ae9-e74c0e147e98
 00000000-0000-0000-0000-000000000000	6	iizyfvmlz3ie	d8385f7d-1f57-47f5-9570-8f082c5214b4	f	2026-05-20 09:16:13.337352+00	2026-05-20 09:16:13.337352+00	\N	0cc18de8-2d67-4575-831a-6172286eb046
+00000000-0000-0000-0000-000000000000	165	2zswn2trm3zs	13ffd63f-768b-42f2-b487-2238df8fba1b	f	2026-06-24 18:53:54.088371+00	2026-06-24 18:53:54.088371+00	euahvkmvfpra	0907741e-90ce-4f52-bee3-2ca43a2ec52d
 00000000-0000-0000-0000-000000000000	49	zmswgflz4egc	13ffd63f-768b-42f2-b487-2238df8fba1b	t	2026-06-05 17:03:47.521844+00	2026-06-16 18:53:35.627285+00	crwmbseoifxx	aeaf3dad-9547-4e29-a518-086426c5ef7f
 00000000-0000-0000-0000-000000000000	8	zdwptwcwj3jz	13ffd63f-768b-42f2-b487-2238df8fba1b	t	2026-05-20 10:04:17.479978+00	2026-05-20 13:08:20.195283+00	\N	c7bc92c5-cd22-41bf-b20a-2ee16b218b5f
 00000000-0000-0000-0000-000000000000	9	miqslo74zghc	13ffd63f-768b-42f2-b487-2238df8fba1b	t	2026-05-20 13:08:20.199443+00	2026-05-20 14:10:55.182429+00	zdwptwcwj3jz	c7bc92c5-cd22-41bf-b20a-2ee16b218b5f
@@ -3234,6 +3253,7 @@ COPY auth.refresh_tokens (instance_id, id, token, user_id, revoked, created_at, 
 00000000-0000-0000-0000-000000000000	87	mnjeversa7ys	13ffd63f-768b-42f2-b487-2238df8fba1b	t	2026-06-12 14:42:34.990737+00	2026-06-12 17:34:30.00024+00	uqhscr4igm4s	67994a18-d1f8-45cb-98c0-79e8a1a54359
 00000000-0000-0000-0000-000000000000	88	obqbkbgtkb5n	13ffd63f-768b-42f2-b487-2238df8fba1b	t	2026-06-12 17:34:30.001735+00	2026-06-15 13:50:43.499151+00	mnjeversa7ys	67994a18-d1f8-45cb-98c0-79e8a1a54359
 00000000-0000-0000-0000-000000000000	90	ds2mkm6gb5aw	13ffd63f-768b-42f2-b487-2238df8fba1b	f	2026-06-15 13:50:43.500561+00	2026-06-15 13:50:43.500561+00	obqbkbgtkb5n	67994a18-d1f8-45cb-98c0-79e8a1a54359
+00000000-0000-0000-0000-000000000000	164	euahvkmvfpra	13ffd63f-768b-42f2-b487-2238df8fba1b	t	2026-06-24 16:09:58.504455+00	2026-06-24 18:53:54.087254+00	g6kkc6xk244f	0907741e-90ce-4f52-bee3-2ca43a2ec52d
 00000000-0000-0000-0000-000000000000	112	d46abxoesukw	13ffd63f-768b-42f2-b487-2238df8fba1b	f	2026-06-16 18:53:35.628611+00	2026-06-16 18:53:35.628611+00	zmswgflz4egc	aeaf3dad-9547-4e29-a518-086426c5ef7f
 00000000-0000-0000-0000-000000000000	138	5y7cvw6aklwl	d8385f7d-1f57-47f5-9570-8f082c5214b4	f	2026-06-17 04:09:43.067842+00	2026-06-17 04:09:43.067842+00	\N	a50e7537-ec3e-4115-981c-3dfc264bb19a
 00000000-0000-0000-0000-000000000000	139	tg5hfxpg234a	d8385f7d-1f57-47f5-9570-8f082c5214b4	f	2026-06-17 04:10:44.999295+00	2026-06-17 04:10:44.999295+00	\N	888dc384-f460-4dc0-98c3-bf9ddcb428e8
@@ -3253,7 +3273,6 @@ COPY auth.refresh_tokens (instance_id, id, token, user_id, revoked, created_at, 
 00000000-0000-0000-0000-000000000000	161	wu5rbqr4kbnn	13ffd63f-768b-42f2-b487-2238df8fba1b	t	2026-06-24 10:52:05.649404+00	2026-06-24 11:51:15.620597+00	dwibgiwe5tys	0907741e-90ce-4f52-bee3-2ca43a2ec52d
 00000000-0000-0000-0000-000000000000	162	moch2tvrvdya	13ffd63f-768b-42f2-b487-2238df8fba1b	t	2026-06-24 11:51:15.622492+00	2026-06-24 14:01:51.107905+00	wu5rbqr4kbnn	0907741e-90ce-4f52-bee3-2ca43a2ec52d
 00000000-0000-0000-0000-000000000000	163	g6kkc6xk244f	13ffd63f-768b-42f2-b487-2238df8fba1b	t	2026-06-24 14:01:51.110124+00	2026-06-24 16:09:58.503005+00	moch2tvrvdya	0907741e-90ce-4f52-bee3-2ca43a2ec52d
-00000000-0000-0000-0000-000000000000	164	euahvkmvfpra	13ffd63f-768b-42f2-b487-2238df8fba1b	f	2026-06-24 16:09:58.504455+00	2026-06-24 16:09:58.504455+00	g6kkc6xk244f	0907741e-90ce-4f52-bee3-2ca43a2ec52d
 \.
 
 
@@ -3384,7 +3403,7 @@ b9e65183-5e49-4dd4-8ef4-fbaa466651f9	13ffd63f-768b-42f2-b487-2238df8fba1b	2026-0
 6525e179-fa6d-4b7b-a873-4407991d197d	13ffd63f-768b-42f2-b487-2238df8fba1b	2026-05-25 22:03:15.639359+00	2026-06-11 00:17:51.592481+00	\N	aal1	\N	2026-06-11 00:17:51.589732	Next.js Middleware	172.20.0.1	\N	\N	\N	\N	\N
 aeaf3dad-9547-4e29-a518-086426c5ef7f	13ffd63f-768b-42f2-b487-2238df8fba1b	2026-06-03 11:01:43.20135+00	2026-06-16 18:53:35.631146+00	\N	aal1	\N	2026-06-16 18:53:35.631095	Next.js Middleware	172.20.0.1	\N	\N	\N	\N	\N
 41965661-e4c8-4a4e-a9f6-a22c10c54263	d8385f7d-1f57-47f5-9570-8f082c5214b4	2026-06-12 12:28:22.997052+00	2026-06-12 12:28:22.997052+00	\N	aal1	\N	\N	curl/8.5.0	172.20.0.1	\N	\N	\N	\N	\N
-0907741e-90ce-4f52-bee3-2ca43a2ec52d	13ffd63f-768b-42f2-b487-2238df8fba1b	2026-06-18 10:45:46.827288+00	2026-06-24 16:09:58.507986+00	\N	aal1	\N	2026-06-24 16:09:58.507898	Next.js Middleware	172.20.0.1	\N	\N	\N	\N	\N
+0907741e-90ce-4f52-bee3-2ca43a2ec52d	13ffd63f-768b-42f2-b487-2238df8fba1b	2026-06-18 10:45:46.827288+00	2026-06-24 18:53:54.09133+00	\N	aal1	\N	2026-06-24 18:53:54.091226	Next.js Middleware	172.20.0.1	\N	\N	\N	\N	\N
 \.
 
 
@@ -3411,8 +3430,8 @@ COPY auth.sso_providers (id, resource_id, created_at, updated_at, disabled) FROM
 COPY auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, invited_at, confirmation_token, confirmation_sent_at, recovery_token, recovery_sent_at, email_change_token_new, email_change, email_change_sent_at, last_sign_in_at, raw_app_meta_data, raw_user_meta_data, is_super_admin, created_at, updated_at, phone, phone_confirmed_at, phone_change, phone_change_token, phone_change_sent_at, email_change_token_current, email_change_confirm_status, banned_until, reauthentication_token, reauthentication_sent_at, is_sso_user, deleted_at, is_anonymous) FROM stdin;
 00000000-0000-0000-0000-000000000000	d8385f7d-1f57-47f5-9570-8f082c5214b4	authenticated	authenticated	test@freshandfruity.co.uk	$2a$06$WcgUv5Qd4LZHnBvWLy9e/eVHlLvRlCLk5/JiX9YdotIsr7jg6em4q	2026-05-20 09:12:54.072843+00	\N		\N		\N			\N	2026-06-17 11:51:22.385516+00	{"provider": "email", "providers": ["email"]}	{"sub": "d8385f7d-1f57-47f5-9570-8f082c5214b4", "email": "test@freshandfruity.co.uk", "email_verified": true, "phone_verified": false}	\N	2026-05-20 09:12:54.048767+00	2026-06-17 11:51:22.39031+00	\N	\N			\N		0	\N		\N	f	\N	f
 00000000-0000-0000-0000-000000000000	43ee1a78-b170-4f2f-b3cd-0aee654a86f8	authenticated	authenticated	oneg@portal.freshnfruity.com	$2a$06$fXAw5ATJuKy.sI8X5JHhrexDPqfTfy28/i4xZAa.kSAM4eeanAfgC	2026-06-15 11:59:08.113081+00	\N		\N		\N			\N	2026-06-17 11:01:31.562849+00	{"provider": "email", "providers": ["email"]}	{}	f	2026-06-15 11:59:08.113081+00	2026-06-17 13:21:13.068542+00	\N	\N			\N		0	\N		\N	f	\N	f
-00000000-0000-0000-0000-000000000000	13ffd63f-768b-42f2-b487-2238df8fba1b	authenticated	authenticated	david@freshandfruity.co.uk	$2a$10$VRTOVNTPme3aWkv26UKsJueCon1h8nJ2OtTIxpvosngafx7gKCm/O	2026-05-20 09:32:06.708694+00	\N		\N		\N			\N	2026-06-18 10:45:46.827086+00	{"provider": "email", "providers": ["email"]}	{"email_verified": true}	\N	2026-05-20 09:32:06.695042+00	2026-06-24 16:09:58.506573+00	\N	\N			\N		0	\N		\N	f	\N	f
 00000000-0000-0000-0000-000000000000	ba34b2c6-750c-45d4-a8e6-b3c1dfc241ee	authenticated	authenticated	gedola@portal.freshnfruity.com	$2a$10$uwA6W/xj7qdrUXNa0mJItuFvMbfgpdWmjLQAMEhvs5R2I3Ad6rUsS	2026-06-17 13:11:28.11391+00	\N		\N		\N			\N	2026-06-17 13:44:03.03471+00	{"provider": "email", "providers": ["email"]}	{"email_verified": true}	\N	2026-06-17 13:11:28.091674+00	2026-06-18 10:45:07.420633+00	\N	\N			\N		0	\N		\N	f	\N	f
+00000000-0000-0000-0000-000000000000	13ffd63f-768b-42f2-b487-2238df8fba1b	authenticated	authenticated	david@freshandfruity.co.uk	$2a$10$VRTOVNTPme3aWkv26UKsJueCon1h8nJ2OtTIxpvosngafx7gKCm/O	2026-05-20 09:32:06.708694+00	\N		\N		\N			\N	2026-06-18 10:45:46.827086+00	{"provider": "email", "providers": ["email"]}	{"email_verified": true}	\N	2026-05-20 09:32:06.695042+00	2026-06-24 18:53:54.08964+00	\N	\N			\N		0	\N		\N	f	\N	f
 \.
 
 
@@ -3694,6 +3713,8 @@ e7fe9a06-4f4c-4932-953f-b2ab30a0e3a3	cost_drift	critical	ed61eae5-7212-4ab0-8b27
 14fbfd0f-9cc7-41a1-bbd5-e9afc45a12a7	stale_cost	info	b22c888d-a1e1-4ff1-a2d4-507f8ba43c12	Potato (Soraya)	Potato (Soraya) hasn't appeared on any invoice for 15 days — cost may be outdated.	Check if still being bought, and from which supplier.	f	daily_sweep	2026-06-24 10:00:02.794816+00
 18c2512e-2cae-4c52-af42-45240ce9b6d2	cost_drift	critical	55b6a02c-33a1-4f36-b857-abff74aff428	Apple Bramley	Apple Bramley is 1202% up on this invoice (£22.00 vs stored £1.69).	Check if retail price needs raising.	f	data_golem	2026-06-15 07:35:53.650166+00
 e46dcfe7-1524-4e28-ba0d-387ce9a7d07f	cost_drift	critical	a65e48ce-4a87-4a52-936f-42ce26691dae	Melon Cantaloupe	Melon Cantaloupe is 752% up on this invoice (£15.00 vs stored £1.76).	Check if retail price needs raising.	t	data_golem	2026-06-15 07:35:53.650166+00
+b461479f-b797-4f9c-b99b-df1c5737b893	unmatched_item	warning	\N	MANGOSTEEN . THAI AND 2X500G 1KG PREPACKED	"MANGOSTEEN . THAI AND 2X500G 1KG PREPACKED" (Total Produce, 2026-06-23) couldn't be matched to any product — needs mapping.	Go to invoice review page and map this item to the correct product.	f	data_golem	2026-06-25 01:48:50.955053+00
+7de59f9f-92ee-4e7e-afe9-d467f1480fdf	implausible_cost	warning	35fac0b9-1ae9-4f97-b8eb-089b10f07ca4	Mango	Mango: weighted cost £1.00 is at/above shelf £1.00 (÷ case of 2 ≈ £0.50/unit) — almost certainly a per-case/per-kg price read as per-unit. Suggestions off this cost will be wrong.	Check units_per_case / unit_type on the recent invoice lines (cf. migration 0090).	f	data_golem	2026-06-25 01:48:50.955053+00
 104d36a1-83bd-438f-b450-25652b44278e	cost_drift	critical	8be94809-6c19-4f8e-b797-fe83416f4458	Potato Loose	Potato Loose is 614% up on this invoice (£6.50 vs stored £0.91).	Check if retail price needs raising.	f	data_golem	2026-06-16 07:36:16.495664+00
 8571f42b-0422-4b96-861e-6053c858a38a	cost_drift	critical	28ff7b46-5d20-4beb-9bd0-997eeb750500	Swede	Swede is 913% up on this invoice (£8.00 vs stored £0.79).	Check if retail price needs raising.	f	data_golem	2026-06-16 07:36:16.495664+00
 7460cb7c-7f5d-46a4-b670-dafb3bd7713a	cost_drift	critical	e8bfae4c-a7a3-4555-850b-b7f2cca1b619	Potato Baby	Potato Baby is 799% up on this invoice (£25.00 vs stored £2.78).	Check if retail price needs raising.	f	data_golem	2026-06-16 07:36:16.495664+00
@@ -4974,6 +4995,15 @@ fbda0ad6-9db2-4f70-9f32-c1bc397f6245	35fac0b9-1ae9-4f97-b8eb-089b10f07ca4	retail
 8e315f9b-7aee-4817-af36-2dd889df5c01	32322628-aca1-4280-8a83-8a4133546bbb	retail	180	160	auto	\N	2026-06-24 12:46:54.935634+00
 5b7e7a63-cdaa-4e4b-b1c6-30db06b50d56	ec838c05-8951-4a5d-b931-883d80429ccc	retail	360	250	auto	\N	2026-06-24 12:46:54.935634+00
 e065a5b8-d756-4c36-85da-dedb58d6c303	5635d13d-2ae8-49e4-b39b-fb330115cdae	purchase	0	70	auto	\N	2026-06-24 18:35:57.127789+00
+056919d3-d5de-4ed9-90a8-845bff80aa3d	b22c888d-a1e1-4ff1-a2d4-507f8ba43c12	purchase	51	27	auto	\N	2026-06-24 19:19:00.414479+00
+9b768dad-8647-41a9-8ff5-09713add11c7	ff4eb8e2-7fe3-4c1b-8b59-24d502b8c4c8	purchase	0	129	auto	\N	2026-06-24 20:03:44.541103+00
+091e373d-a9da-45ef-92ac-8ed9850c3e1b	2af52c0b-c9cd-4b96-bed0-744a8240032c	purchase	44	47	auto	\N	2026-06-25 01:48:50.559068+00
+892e056d-8bd6-42dd-ac32-f6f119c17f40	7d48b88d-6791-4182-b624-8f58b303035e	purchase	122	115	auto	\N	2026-06-25 01:48:50.570583+00
+b440b853-ed9b-4264-8b0c-1b8baf1fc23b	c414ebb1-1d91-46d8-afa3-3962b1d20cdb	purchase	71	59	auto	\N	2026-06-25 01:48:50.578289+00
+a8ece8e5-a186-4891-a336-1d0317c2f979	cd6a5b06-81e9-4703-8a08-baeb6a504439	purchase	139	200	auto	\N	2026-06-25 01:48:50.585864+00
+adbd66fc-0f0f-4e58-8f4b-fb744bd283a9	e3e632c9-89f5-4e03-8b3d-010b6b9baf5c	purchase	210	214	auto	\N	2026-06-25 01:48:50.594485+00
+7739dcd2-ae20-4e12-a2bd-7c00f11cd640	e4be8932-840d-4a2f-81dd-340f834cfc6c	purchase	181	150	auto	\N	2026-06-25 01:48:50.60231+00
+d6554901-6244-4105-928f-bbc35d8340a7	f1ecc381-a61e-4c97-b231-b34133f7d69d	purchase	156	135	auto	\N	2026-06-25 01:48:50.6075+00
 \.
 
 
@@ -4987,6 +5017,7 @@ f0dcf684-3aee-48f2-8b69-4a9bbde93572	298c882e-26db-4c5c-bc08-40035214a9e1	fcd8d1
 bce0a225-95d0-40b8-98f4-d732ab5ff2be	7d48b88d-6791-4182-b624-8f58b303035e	fcd8d19e-8c75-4f51-8525-462b7e8980f3	146	244	multiplier	0.5000	f	pending	\N	\N	2026-06-24 02:02:40.255769+00	\N	640
 a2d08ab7-b925-4b6f-a8a6-e2335354c4d2	9aaf97d9-8de5-4077-954d-e649f084c29b	e49e9359-b5d4-4fd9-be29-df9de0583cd6	55	282	multiplier	0.5000	f	pending	\N	\N	2026-06-24 02:24:52.220798+00	\N	1000
 bf3835d5-115b-4abe-9cfd-3e9d513b7ddb	1ed73c76-888b-42d0-a571-3a49fec5d926	3303b300-7e07-4403-b0a5-47486059e5a6	80	278	multiplier	0.5000	f	pending	\N	\N	2026-06-24 08:09:41.542197+00	\N	1000
+316ea23e-07a1-4acb-b928-eff0a9483117	cd6a5b06-81e9-4703-8a08-baeb6a504439	c17db795-1e2e-4c8a-a6cc-b7658e82cfd8	239	400	multiplier	0.5000	f	pending	\N	\N	2026-06-25 01:48:50.642637+00	\N	717
 bdbf5a74-424f-4f4c-b228-f6f7f9667626	2af52c0b-c9cd-4b96-bed0-744a8240032c	d4589b3e-13c4-43e2-b0ba-a3ceba6b9040	60	92	multiplier	0.5000	f	rejected	\N	\N	2026-05-27 21:04:15.339345+00	\N	\N
 3e4feb4e-0018-492b-8975-1cff20579b7b	e3e632c9-89f5-4e03-8b3d-010b6b9baf5c	d4589b3e-13c4-43e2-b0ba-a3ceba6b9040	70	1560	multiplier	0.5000	f	rejected	\N	\N	2026-05-27 21:04:15.339345+00	\N	\N
 3b479652-1ac5-4e5b-a17c-bfd00730f1b0	298c882e-26db-4c5c-bc08-40035214a9e1	d4589b3e-13c4-43e2-b0ba-a3ceba6b9040	70	1360	multiplier	0.5000	f	rejected	\N	\N	2026-05-27 21:04:15.339345+00	\N	\N
@@ -5009,6 +5040,27 @@ f64a7f4c-5b30-4912-ba12-916508e75779	2eb8b8b5-a035-41d3-9fa3-a62c54bb34f5	\N	39	
 b138ebb5-4a26-4234-b540-1a83aaf4a9d3	496d0599-fe3b-470d-9b9d-c2d97985995f	\N	249	500	multiplier	0.5000	f	pending	\N	\N	2026-06-23 17:26:02.968+00	\N	1000
 a0cbe2fd-90d6-4880-b585-f09870ff8892	72006aef-fabd-425e-bca7-439587c674b1	\N	360	600	multiplier	0.5000	f	pending	\N	\N	2026-06-23 17:26:02.968+00	\N	1080
 77502c57-f2ca-4f4f-b38b-d35117459060	e670399d-e9f6-45c6-a04c-d1f242c8c4f0	\N	125	236	multiplier	0.5000	f	pending	\N	\N	2026-06-23 17:26:02.968+00	\N	640
+\.
+
+
+--
+-- Data for Name: product_epos_aliases; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.product_epos_aliases (epos_product_id, product_id, note, created_at) FROM stdin;
+4592060	b3b40799-e152-443b-b65e-21c530579670	Pomegranate large (size variant)	2026-06-24 21:27:51.467087+00
+14155420	b652b426-6068-4eba-82ac-2ffc78424d3a	Dragon fruit (duplicate button)	2026-06-24 21:27:51.467087+00
+52238263	8314af80-11a7-4d27-a9d1-ca00943886f5	avocado 3 for £1 (promo)	2026-06-24 21:27:51.467087+00
+9912734	ff4eb8e2-7fe3-4c1b-8b59-24d502b8c4c8	Milk Promotion 80p (promo)	2026-06-24 21:27:51.467087+00
+46727281	b3b40799-e152-443b-b65e-21c530579670	Pomegranate 2 for £1 (promo)	2026-06-24 21:27:51.467087+00
+49087054	fbb5becc-cca4-4122-a65b-4a447c5f926c	Plum 4 for £1 (promo)	2026-06-24 21:27:51.467087+00
+46682933	2eb8b8b5-a035-41d3-9fa3-a62c54bb34f5	Passion Fruit 3 for £1 (promo)	2026-06-24 21:27:51.467087+00
+43512135	ff4eb8e2-7fe3-4c1b-8b59-24d502b8c4c8	Milk Promotion (promo)	2026-06-24 21:27:51.467087+00
+52255437	e4be8932-840d-4a2f-81dd-340f834cfc6c	courgettes 10 for £1 (promo)	2026-06-24 21:27:51.467087+00
+43128413	ff4eb8e2-7fe3-4c1b-8b59-24d502b8c4c8	Milk Mp (promo)	2026-06-24 21:27:51.467087+00
+52217185	c414ebb1-1d91-46d8-afa3-3962b1d20cdb	cherry tomato tub (duplicate button)	2026-06-24 21:27:51.467087+00
+52183532	35fac0b9-1ae9-4f97-b8eb-089b10f07ca4	mango2 (duplicate button)	2026-06-24 21:27:51.467087+00
+52238184	8314af80-11a7-4d27-a9d1-ca00943886f5	avocado offer (promo)	2026-06-24 21:27:51.467087+00
 \.
 
 
@@ -5665,166 +5717,166 @@ COPY public.product_suppliers (product_id, supplier_id, is_preferred, is_blocked
 -- Data for Name: products; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
-COPY public.products (id, name, category, unit, retail_price, wholesale_price, purchase_cost, price_multiplier, market_ceiling, margin_floor, epos_now_id, is_active, created_at, updated_at, case_size, weekly_units, wins_dismissed_cost, default_supplier_id, is_loss_leader, needs_review, weekly_units_recent, default_unit_type) FROM stdin;
-5a1962b7-bc7e-4011-bd3c-00fb7620055e	Watermelon Small	fruit	each	400	0	350	2.00	\N	0.20	52207693	t	2026-06-09 10:04:27.369066+00	2026-06-24 13:05:33.593509+00	1	0	\N	\N	f	f	15	\N
-5d5fd9f2-5232-4eb5-9c12-7e6d58058849	Mushroom Regular	veg	kg	458	0	229	2.00	\N	0.20	4590129	t	2026-05-29 14:26:12.157548+00	2026-06-24 18:19:29.142773+00	1	19	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	6	box
-e2838162-83b6-41d9-85c2-d04f4f445967	Lemon	fruit	each	48	0	35	2.00	\N	0.20	4577796	t	2026-05-20 09:10:04.371843+00	2026-06-23 02:07:04.126057+00	64	46	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	65	retail_unit
-fe4be91f-7b90-4427-ae30-a2ed47a831ea	Eggs Tray Large	other	each	790	0	0	2.00	\N	0.20	4580448	t	2026-06-09 09:55:33.70876+00	2026-06-09 10:04:27.362942+00	1	23	\N	\N	f	f	\N	\N
-15e0259d-7e67-45dc-9c0f-fb77e7b20928	Apricot	fruit	each	175	0	130	2.00	\N	0.20	46128454	t	2026-05-20 09:10:04.617715+00	2026-06-22 08:37:03.974225+00	10	\N	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	\N
-5f9a1aca-e03e-4078-8351-daf979b7dd8d	Horseradish	veg	each	350	0	0	2.00	\N	0.20	9620292	t	2026-06-08 11:21:05.337751+00	2026-06-09 00:04:42.142535+00	1	6	\N	\N	f	f	\N	\N
-992069e0-8b07-402c-9fe7-ab747972c640	Water Bottles - 24	other	each	480	0	300	1.60	\N	0.20	\N	t	2026-06-18 14:50:09.744755+00	2026-06-18 14:50:09.744755+00	1	\N	\N	\N	f	f	\N	\N
-195ac8a7-948c-4e65-ba36-e18f018907ab	Water Still 500ml	other	each	25	0	13	2.00	\N	0.20	50342025	t	2026-05-20 09:10:04.628436+00	2026-06-24 02:24:52.128702+00	24	10	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	\N
-37311bb1-1e36-44f7-9513-58b3af0e1270	Lettuce Little Gem	veg	each	129	0	0	2.00	\N	0.20	\N	t	2026-06-09 10:04:27.370247+00	2026-06-09 10:04:27.370247+00	1	0	\N	\N	f	f	\N	\N
-714aac99-97c1-4358-a82c-2b08f06437da	Garlic Peeled	veg	bag	600	600	300	2.00	\N	0.20	\N	t	2026-06-11 10:23:13.670497+00	2026-06-23 08:01:24.811631+00	1	\N	\N	\N	f	f	\N	\N
-cfac4e49-5427-4bf0-aa4f-64a137e49d23	Leek	veg	kg	320	0	143	2.00	\N	0.20	4590125	t	2026-05-20 09:10:04.371843+00	2026-06-19 08:44:56.061382+00	1	22	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	14	box
-df8d618e-d7da-4755-b47c-b89217b80d50	Grapes	fruit	punnet	239	0	179	2.00	\N	0.20	47592794	t	2026-05-20 09:10:04.371843+00	2026-06-24 02:24:52.194666+00	10	53	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	79	box
-ed61eae5-7212-4ab0-8b27-a0a267e3936b	Melon Honeydew	fruit	each	280	0	155	2.00	\N	0.20	7516789	t	2026-05-20 09:10:04.617715+00	2026-06-22 08:37:04.025032+00	8	13	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	13	box
-d85d0d21-166f-4fcb-967d-df877ee9b56a	Banana	fruit	kg	149	0	103	2.00	\N	0.20	4577782	t	2026-05-20 09:10:04.371843+00	2026-06-24 18:19:29.142773+00	1	74	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	97	box
-f1ecc381-a61e-4c97-b231-b34133f7d69d	Tomato	veg	kg	399	0	156	2.00	\N	0.20	4590157	t	2026-05-20 09:10:04.371843+00	2026-06-24 07:58:32.505961+00	9	31	\N	aaaaaaaa-0001-0000-0000-000000000001	f	f	26	box
-5635d13d-2ae8-49e4-b39b-fb330115cdae	Carrot Bag 1KG	veg	bag	100	0	70	2.00	\N	0.20	47064979	t	2026-06-09 09:55:33.705033+00	2026-06-24 18:35:57.127789+00	1	37	\N	\N	f	f	\N	\N
-3a16ee54-794e-4622-873c-e08b055b60cb	Sweet Pepper	veg	each	100	0	0	2.00	\N	0.20	\N	f	2026-06-09 10:04:27.369645+00	2026-06-09 16:55:28.365381+00	1	0	\N	\N	f	f	\N	\N
-78752bde-835e-446f-9c0b-fb18fd09f095	Broccoli	veg	each	100	0	45	2.00	\N	0.20	\N	t	2026-05-20 09:10:04.371843+00	2026-06-09 00:04:15.135306+00	1	\N	\N	\N	f	f	\N	\N
-05f8f1e4-6616-4720-a999-15b76493989f	Cauliflower	veg	each	120	0	55	2.00	\N	0.20	\N	t	2026-05-20 09:10:04.371843+00	2026-06-09 00:04:15.135306+00	1	\N	\N	\N	f	f	\N	\N
-59a3984f-804d-41b8-b335-4c80a5cdaa43	Spinach	veg	bag	90	0	40	2.00	\N	0.20	\N	t	2026-05-20 09:10:04.371843+00	2026-06-09 00:04:15.135306+00	1	\N	\N	\N	f	f	\N	\N
-ae1a3ca2-ed33-4c83-8b30-c3f2ef6895da	Nectarine Punnet	fruit	punnet	250	0	123	2.00	\N	0.20	46073190	t	2026-06-09 10:04:27.367969+00	2026-06-24 08:09:41.507506+00	10	0	\N	\N	f	f	60	retail_unit
-ec838c05-8951-4a5d-b931-883d80429ccc	Strawberry	fruit	punnet	250	0	140	2.00	\N	0.20	48466184	t	2026-05-20 09:10:04.371843+00	2026-06-24 12:46:54.935634+00	20	23	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	3	\N
-75bf9c8c-83a4-4132-b95d-7cbcd042ce9c	Chilli (Red)	veg	each	30	0	12	2.00	\N	0.20	\N	t	2026-05-20 09:10:04.371843+00	2026-06-12 12:24:32.581224+00	1	14	\N	\N	f	f	\N	\N
-a64175dd-856a-4534-918b-0f772e3d1025	Potato Mids	veg	each	499	0	75	2.00	\N	0.20	\N	t	2026-05-20 09:10:04.620693+00	2026-06-24 13:05:33.593509+00	4	15	\N	aaaaaaaa-0003-0000-0000-000000000003	f	f	\N	box
-c414ebb1-1d91-46d8-afa3-3962b1d20cdb	Tomato Cherry	veg	punnet	120	0	71	2.00	\N	0.20	4590159	t	2026-05-20 09:10:04.620693+00	2026-06-22 01:50:29.148559+00	9	60	\N	aaaaaaaa-0001-0000-0000-000000000001	f	f	52	box
-adcb81b3-6477-4595-8bef-0977eb5cc5c0	Chinese Leaves	veg	each	149	0	88	2.00	\N	0.20	7927245	t	2026-05-27 11:46:20.399382+00	2026-06-16 20:16:24.658763+00	10	3	\N	aaaaaaaa-0001-0000-0000-000000000001	f	f	3	\N
-496d0599-fe3b-470d-9b9d-c2d97985995f	Gooseberry	fruit	punnet	249	0	250	2.00	\N	0.20	52258129	t	2026-06-16 20:16:24.658763+00	2026-06-24 13:05:33.593509+00	10	\N	\N	\N	t	f	\N	\N
-a2d09c46-0c0f-4a89-8db3-b2e225fed27c	Potato Baby Roast	veg	kg	225	0	0	2.00	\N	0.20	4590143	t	2026-06-09 09:55:33.706393+00	2026-06-09 09:55:33.706393+00	1	27	\N	\N	f	f	\N	\N
-787f5062-344a-497f-ae3c-c00da37b6200	Roasted Pistachios	other	each	150	0	0	2.00	\N	0.20	50153547	t	2026-06-09 09:55:33.707356+00	2026-06-09 09:55:33.707356+00	1	11	\N	\N	f	f	\N	\N
-b3e45567-d165-47f4-ac58-b499e052c08f	Roasted Almonds	other	each	150	0	0	2.00	\N	0.20	50153533	t	2026-06-09 09:55:33.707995+00	2026-06-09 09:55:33.707995+00	1	5	\N	\N	f	f	\N	\N
-ff4eb8e2-7fe3-4c1b-8b59-24d502b8c4c8	Milk	other	each	149	0	0	2.00	\N	0.20	4592058	t	2026-06-09 09:55:33.708403+00	2026-06-09 09:55:33.708403+00	1	190	\N	\N	f	f	\N	\N
-8acd3d03-791a-4f37-ac8a-f431e74fe643	Grape Thompson	fruit	bag	200	0	90	2.00	\N	0.20	\N	f	2026-05-20 09:10:04.371843+00	2026-06-09 00:04:15.135306+00	1	\N	\N	\N	f	f	\N	\N
-e2e3d36a-3576-42ec-9745-e9ab4c4d13c2	Mushroom Flat	veg	punnet	0	0	0	2.00	\N	0.20	\N	f	2026-05-20 09:10:04.620693+00	2026-06-09 00:04:15.135306+00	1	\N	\N	\N	f	f	\N	\N
-53592a4b-f97d-4964-b00f-36bb4a9cae11	Chicory	veg	each	100	0	0	2.00	\N	0.20	9884793	t	2026-05-27 11:46:20.399382+00	2026-06-09 00:04:15.135306+00	1	\N	\N	\N	f	f	\N	\N
-2881b04a-4d89-4eca-8180-b9293f53f791	Potato (Bag 2kg)	veg	bag	140	0	85	2.00	\N	0.20	4590146	t	2026-05-20 09:10:04.371843+00	2026-06-17 04:13:24.322496+00	1	157	\N	\N	f	f	207	retail_unit
-21a4c8f2-17a0-4a25-a2c7-c8e01ffd0b92	Date Box Small	fruit	each	149	0	0	2.00	\N	0.20	51082442	t	2026-06-09 09:55:33.7069+00	2026-06-17 04:13:24.322496+00	1	20	\N	\N	f	f	\N	retail_unit
-c65565e5-cdec-447c-9197-87dd8ea0576d	Watermelon Large	fruit	each	600	0	321	2.00	\N	0.20	48921831	t	2026-06-08 11:21:05.337751+00	2026-06-17 04:13:24.322496+00	6	8	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	19	retail_unit
-50e18db9-c0bc-4df2-8ebb-f6bdf1f979ef	Tomato Cherry Vine	veg	kg	699	0	203	2.00	\N	0.20	48735462	t	2026-05-27 11:46:20.399382+00	2026-06-17 04:13:24.322496+00	1	4	\N	aaaaaaaa-0001-0000-0000-000000000001	f	f	3	retail_unit
-b3b40799-e152-443b-b65e-21c530579670	Pomegranate	fruit	each	150	0	104	2.00	\N	0.20	51444342	t	2026-05-20 09:10:04.617715+00	2026-06-23 08:27:44.094318+00	8	35	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	retail_unit
-55b6a02c-33a1-4f36-b857-abff74aff428	Apple Bramley	fruit	kg	332	0	169	2.00	\N	0.20	48180213	t	2026-05-20 09:10:04.612912+00	2026-06-22 02:15:09.203013+00	1	\N	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	8	retail_unit
-298c882e-26db-4c5c-bc08-40035214a9e1	Pepper (Yellow)	veg	kg	449	0	392	2.00	\N	0.20	4590141	t	2026-05-20 09:10:04.371843+00	2026-06-24 02:02:40.190693+00	1	12	\N	aaaaaaaa-0001-0000-0000-000000000001	f	f	3	box
-aabdd6c6-8ada-43b0-bcfd-08e0d87a47d0	Apple Cripps Pink	fruit	each	299	0	150	2.00	\N	0.20	\N	t	2026-05-20 09:10:04.612912+00	2026-06-09 18:19:12.128993+00	1	\N	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	\N
-e3e632c9-89f5-4e03-8b3d-010b6b9baf5c	Pepper (Red)	veg	kg	449	0	210	2.00	\N	0.20	4590139	t	2026-05-20 09:10:04.371843+00	2026-06-24 02:02:40.216366+00	1	48	\N	aaaaaaaa-0001-0000-0000-000000000001	f	f	50	box
-d19e1db9-6c21-42c2-bbb2-f72d3a595d07	Celeriac	veg	each	299	0	100	2.00	\N	0.20	4590108	t	2026-05-27 11:46:20.399382+00	2026-06-17 04:13:24.322496+00	6	11	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	11	box
-fcedb9db-6631-48cb-b785-0ae38d9b4cf9	Papaya	fruit	each	399	0	163	2.00	\N	0.20	47744198	t	2026-05-27 11:46:20.399382+00	2026-06-22 02:15:09.304597+00	4	1	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	2	\N
-1cfd169b-2e29-4894-a642-2662762385b0	Potato (Purple 2kg)	veg	bag	140	0	65	2.00	\N	0.20	\N	t	2026-06-09 10:36:30.218914+00	2026-06-18 07:45:54.387774+00	10	0	\N	aaaaaaaa-0001-0000-0000-000000000001	f	f	\N	\N
-8314af80-11a7-4d27-a9d1-ca00943886f5	Avocado	fruit	each	115	0	83	2.00	\N	0.20	2602077	t	2026-05-20 09:10:04.371843+00	2026-06-18 07:57:42.523928+00	12	92	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	161	box
-be162566-2631-4c69-98cb-a003a193a8de	Pear Conference	fruit	kg	299	0	158	2.00	\N	0.20	4580434	t	2026-05-20 09:10:04.617715+00	2026-06-24 02:24:52.183212+00	1	26	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	34	box
-53fac4f9-9b52-4d7f-9c3a-365d9f4faeb1	Shallot	veg	each	160	0	80	2.00	\N	0.20	46301462	t	2026-05-27 11:46:20.399382+00	2026-06-17 04:13:24.322496+00	1	4	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	1	retail_unit
-56f46a26-3c7e-41ce-ba00-dfbee7dcf626	Aubergine	veg	kg	380	0	230	2.00	\N	0.20	4590120	t	2026-05-20 09:10:04.371843+00	2026-06-24 07:58:32.494677+00	1	18	\N	aaaaaaaa-0001-0000-0000-000000000001	f	f	26	box
-df530518-4266-4582-8c6b-964182a0a34c	Melon Galia	fruit	each	250	0	175	2.00	\N	0.20	4580415	t	2026-05-27 11:46:20.399382+00	2026-06-22 08:37:04.019783+00	8	7	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	3	retail_unit
-1ed73c76-888b-42d0-a571-3a49fec5d926	Peach	fruit	each	80	0	43	2.00	\N	0.20	4580433	t	2026-05-20 09:10:04.371843+00	2026-06-24 08:09:41.461333+00	10	4	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	\N
-69e73158-0fa9-4af1-8d95-b90122512e1d	Carrot Loose	veg	kg	125	0	73	2.00	\N	0.20	4590103	t	2026-05-20 09:10:04.371843+00	2026-06-19 08:44:56.044813+00	1	86	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	151	box
-a3f6f2fd-4f93-43f4-bd8f-61b13beca826	Blueberry	fruit	punnet	199	0	100	2.00	\N	0.20	47891356	t	2026-05-20 09:10:04.617715+00	2026-06-23 02:07:04.068286+00	12	8	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	13	retail_unit
-a52d2fd6-9f5c-472c-a381-6a3f5fb71eb2	Rhubarb	fruit	each	400	0	0	2.00	\N	0.20	4590151	t	2026-05-27 11:46:20.399382+00	2026-06-09 18:19:12.128993+00	1	1	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	\N
-d91a5b6f-b0d0-423f-bd52-5d4ff99b81cf	Pear Forelle	fruit	each	280	0	170	2.00	\N	0.20	\N	t	2026-05-20 09:10:04.617715+00	2026-06-24 08:09:41.515015+00	10	\N	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	\N
-2eb8b8b5-a035-41d3-9fa3-a62c54bb34f5	Passion Fruit	fruit	each	39	0	39	2.00	\N	-1.00	4580431	t	2026-05-27 11:46:20.399382+00	2026-06-24 12:46:54.935634+00	35	53	\N	aaaaaaaa-0002-0000-0000-000000000002	t	f	143	box
-eed32eec-e866-4a2d-abc4-315d158f0a8c	Potato Bag	veg	each	450	0	53	2.00	\N	0.20	\N	t	2026-05-29 14:33:02.695932+00	2026-06-23 02:26:57.124723+00	1	1	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	14	\N
-719a0853-dd7c-43f6-93d0-c552775322db	Potato Washed	veg	kg	120	0	27	2.00	\N	0.20	\N	t	2026-05-20 09:10:04.620693+00	2026-06-23 08:27:44.081156+00	1	1	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	\N
-6ca074f2-d330-4d85-8ac6-831c4b51d081	Apple Granny Smith	fruit	kg	299	0	146	2.00	\N	0.20	4577778	t	2026-05-20 09:10:04.612912+00	2026-06-24 18:19:29.142773+00	1	12	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	5	retail_unit
-20b47941-4381-4647-a9da-7a7506c93c33	Apple Braeburn	fruit	kg	299	0	150	2.00	\N	0.20	2693455	t	2026-05-20 09:10:04.371843+00	2026-06-24 18:19:29.142773+00	70	15	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	21	retail_unit
-66d42090-178e-42d9-9af0-3bd45ecb6931	Apple Red Delicious	fruit	kg	299	0	217	2.00	\N	0.20	4577781	t	2026-05-20 09:10:04.612912+00	2026-06-24 18:19:29.142773+00	74	7	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	retail_unit
-8be94809-6c19-4f8e-b797-fe83416f4458	Potato Loose	veg	kg	120	0	91	2.00	\N	0.20	46077562	t	2026-05-20 09:10:04.620693+00	2026-06-17 04:13:24.322496+00	1	8	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	22	retail_unit
-132c41ef-8b74-4b5e-b453-14eae3006db3	Sugarsnap	veg	punnet	169	0	115	2.00	\N	0.20	4590168	t	2026-05-29 14:51:34.544+00	2026-06-17 04:13:24.322496+00	1	11	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	13	retail_unit
-4eb6760b-09ec-44d7-affe-77584fe1326b	Plastic Bags	other	each	0	0	0	2.00	\N	0.20	\N	f	2026-05-20 09:10:04.628436+00	2026-06-09 21:57:10.464812+00	1	\N	\N	\N	f	f	\N	\N
-b731c695-eda5-4474-9546-c81e448aed03	Ginger	veg	each	600	0	0	2.00	\N	0.20	45702909	t	2026-05-20 09:10:04.371843+00	2026-06-12 12:24:32.581224+00	1	1	\N	\N	f	f	\N	\N
-7b148b10-fcbe-4755-b8b4-3bad25df4f9e	Turnip	veg	each	362	0	0	2.00	\N	0.20	50491835	t	2026-05-27 11:46:20.399382+00	2026-06-15 15:28:29.876189+00	1	1	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	retail_unit
-22a52ab2-4b4e-4eb9-a9a2-1affb2cae806	Coconut	fruit	each	100	0	0	2.00	\N	0.20	50214000	t	2026-05-29 14:45:23.17072+00	2026-06-09 18:19:12.128993+00	1	\N	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	\N
-e4be8932-840d-4a2f-81dd-340f834cfc6c	Courgette	veg	kg	380	0	181	2.00	\N	0.20	4590114	t	2026-05-20 09:10:04.371843+00	2026-06-22 01:50:29.166537+00	1	48	\N	aaaaaaaa-0001-0000-0000-000000000001	f	f	54	box
-b4b3cc92-9e07-4b2d-8ad6-c14cbd70c4a0	Redcurrant	fruit	each	0	0	0	2.00	\N	0.20	\N	f	2026-05-27 11:46:20.399382+00	2026-06-09 18:19:12.128993+00	1	\N	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	\N
-fd90e857-5390-4736-94ef-745d72d9e86f	Grapefruit	fruit	each	72	0	57	2.00	\N	0.20	4577783	t	2026-05-20 09:10:04.617715+00	2026-06-22 02:15:09.313258+00	35	32	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	19	box
-08e3bfd2-b87c-4a1b-8229-8a93b3febbe9	Celery	veg	each	120	0	63	2.00	\N	0.20	4590110	t	2026-05-20 09:10:04.371843+00	2026-06-24 02:02:40.185507+00	15	17	\N	aaaaaaaa-0001-0000-0000-000000000001	f	f	24	retail_unit
-2af52c0b-c9cd-4b96-bed0-744a8240032c	Cucumber	veg	each	69	0	44	2.00	\N	0.20	4590118	t	2026-05-20 09:10:04.371843+00	2026-06-24 07:58:32.482126+00	16	240	\N	aaaaaaaa-0001-0000-0000-000000000001	f	f	523	box
-b7fdda44-89b9-4bf2-a349-391bd4a847fa	Hispi Cabbage	veg	each	100	0	0	2.00	\N	0.20	10757457	t	2026-05-27 11:46:20.399382+00	2026-06-09 09:55:33.695603+00	1	\N	\N	\N	f	f	\N	\N
-bf7fd091-e669-447a-930c-ced5b1d40399	Oranges Large	fruit	each	69	0	50	2.00	\N	0.20	4580428	t	2026-05-20 09:10:04.371843+00	2026-06-17 04:13:24.322496+00	1	52	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	45	retail_unit
-bfa0dc55-95ba-4554-ab06-f1d1f1b549e1	Pomelo	fruit	each	198	0	0	2.00	\N	0.20	4592059	t	2026-05-27 11:46:20.399382+00	2026-06-09 18:19:12.128993+00	1	14	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	\N
-b9a02791-8cd0-4968-8928-3d2271576f7e	Potato Venezia	other	each	225	0	75	2.00	\N	0.20	\N	t	2026-06-09 16:29:06.17022+00	2026-06-12 00:57:35.107255+00	10	\N	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	\N
-bf3ad912-d591-498a-acf9-fb98f30fb4f5	Garlic Loose	veg	each	77	0	0	2.00	\N	0.20	50336822	t	2026-05-20 09:10:04.371843+00	2026-06-17 07:38:33.259546+00	20	26	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	22	retail_unit
-32676293-0cea-4a21-8df2-160b3b072050	Cherry	fruit	kg	1300	0	37	2.00	\N	0.20	\N	t	2026-05-27 11:46:20.399382+00	2026-06-17 07:56:03.648661+00	1	1	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	\N
-31a26376-6be8-499d-81cc-fac9e140bc11	Red Cabbage	veg	kg	190	0	42	2.00	\N	0.20	4590102	t	2026-05-27 11:46:20.399382+00	2026-06-18 07:45:54.392571+00	1	4	\N	\N	f	f	2	box
-ab636ece-2e57-4a18-92af-fc5c797f65c8	Potato Sack	veg	each	1300	0	850	2.00	\N	0.20	52169649	t	2026-05-29 14:41:12.730374+00	2026-06-15 15:28:29.876189+00	1	\N	\N	\N	f	f	3	box
-da619c22-35f8-4090-b8f2-b9c7894f4607	Pear Qtee Punnet	fruit	each	0	0	0	2.00	\N	0.20	\N	f	2026-05-29 14:53:42.918515+00	2026-06-09 21:57:10.464812+00	1	\N	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	\N
-b22c888d-a1e1-4ff1-a2d4-507f8ba43c12	Potato (Soraya)	veg	kg	140	1200	51	2.00	\N	0.20	\N	t	2026-06-03 17:50:49.063904+00	2026-06-15 15:28:29.876189+00	1	\N	\N	aaaaaaaa-0003-0000-0000-000000000003	f	f	\N	retail_unit
-653bcc89-e1c8-445d-9d69-e5270bfd348c	Lettuce (Pesach)	veg	each	0	0	0	2.00	\N	0.20	\N	f	2026-05-29 14:21:11.176872+00	2026-06-09 21:57:10.464812+00	1	\N	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	\N
-c899cad1-dc28-4ef2-bcad-63203d5f9743	Medjool Date	fruit	each	1480	0	600	2.00	\N	0.20	46691283	t	2026-05-27 11:46:20.399382+00	2026-06-22 08:37:04.01471+00	1	14	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	retail_unit
-2f7eddd0-c7d3-43cb-a8bc-62faf498d7bf	Melon Dino	fruit	each	0	0	0	2.00	\N	0.20	\N	f	2026-05-29 14:24:06.379576+00	2026-06-09 21:57:10.464812+00	1	\N	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	\N
-11262918-0398-495f-b9b9-53a098408d98	Pear Chinese	fruit	each	0	0	0	2.00	\N	0.20	\N	f	2026-05-29 14:53:42.918515+00	2026-06-09 21:57:10.464812+00	1	\N	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	\N
-b14acd54-6d55-4368-afb4-772a60542e84	Plums Punnet	fruit	each	199	0	120	2.00	\N	0.20	47399643	t	2026-05-29 14:30:18.515881+00	2026-06-23 08:27:44.087254+00	10	\N	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	\N
-b652b426-6068-4eba-82ac-2ffc78424d3a	Dragon Fruit	fruit	each	200	0	0	2.00	\N	0.20	45702915	f	2026-05-29 14:45:23.17072+00	2026-06-17 03:17:02.289987+00	1	1	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	\N
-0f834057-4287-47f1-9e10-3798d12cec36	Chestnuts	fruit	each	10	0	0	2.00	\N	0.20	4580427	t	2026-05-29 14:49:16.28145+00	2026-06-24 13:05:33.593509+00	1	\N	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	\N
-7877beaf-2858-462d-aa1e-a784f1407fea	Beetroot	veg	kg	198	0	60	2.00	\N	0.20	46621621	t	2026-05-27 11:46:20.399382+00	2026-06-17 04:13:24.322496+00	1	3	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	4	retail_unit
-7fa9b02c-bf78-4c91-ae1c-1699e0514c9f	Apricot Punnet	fruit	each	250	0	140	2.00	\N	0.20	\N	t	2026-05-29 15:25:51.010664+00	2026-06-09 09:41:36.730408+00	1	\N	\N	\N	f	f	\N	\N
-ccf693c0-8893-4258-a09b-78eb3a4f51ca	Radish	veg	each	66	0	38	2.00	\N	0.20	4590150	t	2026-05-27 11:46:20.399382+00	2026-06-17 04:13:24.322496+00	1	\N	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	6	retail_unit
-faaf74b9-b647-4b9b-b3ef-9ec896ccf58c	Chocolate (Test)	other	box	1000	700	333	3.00	700	0.40	\N	f	2026-06-09 18:13:39.357718+00	2026-06-12 02:41:32.705247+00	1	\N	\N	\N	f	f	\N	\N
-5c925564-a9c0-4a84-badc-b44ec82c2c4b	Cabbage White	veg	kg	100	0	42	2.00	\N	0.20	4590101	t	2026-05-27 11:46:20.399382+00	2026-06-17 07:34:06.775346+00	1	14	\N	aaaaaaaa-0001-0000-0000-000000000001	f	f	27	box
-6a64335e-5911-4cef-b6ad-64f23d91a326	Potato Mini	veg	each	499	0	188	2.00	\N	0.20	51657143	t	2026-05-29 14:33:02.695932+00	2026-06-12 10:41:03.855979+00	1	\N	\N	\N	f	f	21	\N
-2a8cc3bc-6f69-4980-af8b-8345f693ec10	Grape Sweet Globe	fruit	each	240	0	0	2.00	\N	0.20	\N	f	2026-05-27 11:46:20.399382+00	2026-06-09 00:04:15.135306+00	1	\N	\N	\N	f	f	\N	\N
-dd8cc94e-35bf-42af-ac67-5081441c58ff	Marrow	veg	each	150	0	0	2.00	\N	0.20	\N	t	2026-05-27 11:46:20.399382+00	2026-06-09 18:19:12.128993+00	1	1	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	\N
-32fb056f-746c-40aa-8350-cce4337ecc16	Bean Sprout	veg	each	89	0	0	2.00	\N	0.20	45840215	t	2026-05-29 14:42:01.899973+00	2026-06-09 18:19:12.128993+00	1	\N	\N	aaaaaaaa-0001-0000-0000-000000000001	f	f	\N	\N
-ebb6a366-1e7f-479c-b01f-10fa862540c6	Sharon Fruit Loose	fruit	each	49	0	0	2.00	\N	0.20	9941569	t	2026-05-27 11:46:20.399382+00	2026-06-09 18:19:12.128993+00	1	55	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	\N
-29e4acee-70f0-4b77-8474-adf9e59cbdfa	Tomato Plum	veg	each	399	0	0	2.00	\N	0.20	48935674	f	2026-05-27 11:46:20.399382+00	2026-06-09 18:19:12.128993+00	1	\N	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	\N
-96afb637-3e41-45f4-b80f-8ad592307b2a	Fig	fruit	each	69	0	0	2.00	\N	0.20	\N	t	2026-05-27 11:46:20.399382+00	2026-06-09 18:19:12.128993+00	1	\N	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	\N
-febeb6c1-ca53-46ce-8716-3eb0767f80af	Granadilla	fruit	each	139	0	0	2.00	\N	0.20	\N	t	2026-05-29 15:31:55.619742+00	2026-06-09 00:04:15.135306+00	1	\N	\N	\N	f	f	\N	\N
-78b3d11d-2c16-48c3-ae2f-187588e89c28	Lychee	fruit	each	20	0	18	2.00	\N	-1.00	46181620	t	2026-05-27 11:46:20.399382+00	2026-06-17 04:13:24.322496+00	90	20	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	197	retail_unit
-3cd3111e-cc89-46af-a825-fe8afa27e7ce	Apple Cox	fruit	each	0	0	0	2.00	\N	0.20	\N	f	2026-05-20 09:10:04.612912+00	2026-06-09 21:57:10.464812+00	1	\N	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	\N
-9aaf97d9-8de5-4077-954d-e649f084c29b	Kiwi Loose	fruit	each	55	0	37	2.00	\N	0.20	4577795	t	2026-05-20 09:10:04.371843+00	2026-06-24 02:24:52.095355+00	28	60	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	49	box
-a721d816-6aaa-48f8-b8eb-95492999bd25	Pear Williams Punnet	fruit	each	0	0	0	2.00	\N	0.20	\N	f	2026-05-29 14:53:42.918515+00	2026-06-09 21:57:10.464812+00	1	\N	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	\N
-2909b1af-bfcf-45cb-80ed-c197d2a8e80f	Kohlrabi	veg	kg	420	0	213	2.00	\N	0.20	46030632	t	2026-05-27 11:46:20.399382+00	2026-06-17 04:13:24.322496+00	1	13	\N	\N	f	f	17	retail_unit
-81e4479c-dfaf-4d8b-8f7f-d63bade35e6b	Pepper (Orange)	veg	each	50	0	300	2.00	\N	0.20	\N	f	2026-05-20 09:10:04.371843+00	2026-06-09 18:19:12.128993+00	1	\N	\N	aaaaaaaa-0001-0000-0000-000000000001	f	f	\N	\N
-a7ffe61b-7b35-4a8c-bc6c-3c73b4902954	Apple Variety	fruit	each	199	0	0	2.00	\N	0.20	19247718	t	2026-05-29 14:45:23.17072+00	2026-06-17 04:13:24.322496+00	1	\N	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	retail_unit
-3d4f1023-ca6a-413c-8018-384a605c4c42	Tangerine	fruit	kg	333	0	186	2.00	\N	0.20	4580444	t	2026-05-27 11:46:20.399382+00	2026-06-24 02:24:52.151543+00	72	\N	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	42	retail_unit
-32322628-aca1-4280-8a83-8a4133546bbb	Strawberry Punnet	fruit	punnet	160	0	80	2.00	\N	0.20	4580443	t	2026-06-08 11:21:05.337751+00	2026-06-24 12:46:54.935634+00	1	\N	\N	\N	f	f	13	\N
-b90e4e16-a6df-4f8a-a99a-c36420942e9a	Garlic Prepack	veg	each	240	0	80	2.00	\N	0.20	46152000	t	2026-05-29 15:32:57.490769+00	2026-06-17 04:13:24.322496+00	1	10	\N	\N	f	f	13	retail_unit
-af76c0f4-fe39-4ed4-9b25-ca9a1fd2ef9c	Carrot Prepack	veg	each	100	0	80	2.00	\N	0.20	\N	f	2026-05-29 15:30:45.037824+00	2026-06-24 13:05:33.593509+00	1	33	\N	\N	f	f	\N	\N
-be2293d5-4a16-4ca6-a40a-294c26a4ae85	Lime	fruit	each	43	0	15	2.00	\N	0.20	9764517	t	2026-05-20 09:10:04.371843+00	2026-06-19 08:49:14.336148+00	48	4	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	\N
-7d48b88d-6791-4182-b624-8f58b303035e	Mushroom Button	veg	punnet	146	0	122	2.00	\N	0.20	52184056	t	2026-05-20 09:10:04.371843+00	2026-06-24 13:06:20.121568+00	12	19	\N	aaaaaaaa-0001-0000-0000-000000000001	f	f	8	retail_unit
-6d4ac15f-5c33-4b70-8ad8-641bc710d2cb	Starfruit	fruit	each	199	0	150	2.00	\N	0.20	50207600	t	2026-05-29 14:35:01.869536+00	2026-06-10 11:33:57.964492+00	1	\N	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	\N
-51a7e9ba-f37b-4fff-8a54-78e664466bb9	Melon Piel de Sapo	fruit	each	250	0	189	2.00	\N	0.20	4580417	t	2026-05-29 14:24:06.379576+00	2026-06-10 11:33:57.965134+00	1	1	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	\N
-72006aef-fabd-425e-bca7-439587c674b1	Plums Loose	fruit	kg	360	0	300	2.00	\N	0.20	4580440	t	2026-05-20 09:10:04.617715+00	2026-06-24 18:19:29.142773+00	1	20	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	4	retail_unit
-31b54cad-4d38-4cb1-b9d6-091deacd53b3	Butternut Squash	veg	kg	260	0	85	2.00	\N	0.20	46020023	t	2026-05-20 09:10:04.371843+00	2026-06-17 07:38:33.29708+00	10	17	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	box
-75051582-5d94-4382-98c9-072385112013	Bean Fine	veg	punnet	169	0	95	2.00	\N	0.20	4590164	t	2026-05-27 11:46:20.399382+00	2026-06-17 07:38:33.310915+00	1	9	\N	\N	f	f	6	\N
-32818a27-e07f-43d9-a957-2a90aac27181	Potato	veg	kg	120	0	65	2.00	\N	0.20	\N	t	2026-05-20 09:10:04.632632+00	2026-06-15 15:28:29.876189+00	10	\N	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	box
-0899b85f-f1f0-43bd-8912-211e0b14e9ff	Sharon Fruit Punnet	fruit	each	350	0	0	2.00	\N	0.20	\N	t	2026-05-29 14:39:41.016329+00	2026-06-09 18:19:12.128993+00	1	\N	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	\N
-edaff518-554f-40d1-94bf-ce88036cb7b0	Spring Onion	veg	bunch	60	0	25	2.00	\N	0.20	\N	t	2026-05-20 09:10:04.371843+00	2026-06-12 00:57:35.107255+00	1	\N	\N	aaaaaaaa-0001-0000-0000-000000000001	f	f	\N	\N
-3e03f4e8-2521-4bed-9e2a-a26bb507e8f3	Tangerine	fruit	each	0	0	0	2.00	\N	0.20	\N	f	2026-05-20 09:10:04.617715+00	2026-06-15 15:28:29.876189+00	1	23	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	42	box
-37b38db2-5697-4dae-8200-f292bcd2032c	Salad Cress	veg	each	44	0	18	2.00	\N	0.20	4590117	t	2026-05-27 11:46:20.399382+00	2026-06-24 02:02:40.204404+00	16	22	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	16	retail_unit
-c2a488d5-3700-424b-af2a-cdc0b4643de9	Garlic Peeled Pack	veg	each	690	0	270	2.00	\N	0.20	\N	t	2026-05-29 15:32:57.490769+00	2026-06-09 00:04:15.135306+00	1	\N	\N	\N	f	f	\N	\N
-fbb5becc-cca4-4122-a65b-4a447c5f926c	Plum	fruit	each	60	0	25	2.00	\N	0.20	\N	f	2026-05-20 09:10:04.371843+00	2026-06-15 15:28:29.876189+00	1	\N	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	box
-1dcd2a92-3093-4328-a17f-6333249ef914	Sweet Potato	veg	each	299	0	156	2.00	\N	0.20	4590154	t	2026-05-20 09:10:04.371843+00	2026-06-17 04:13:24.322496+00	1	43	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	72	box
-129f301b-2406-4003-8668-584f515779ee	Kiwi Prepack	fruit	each	299	0	0	2.00	\N	0.20	46998788	t	2026-05-29 15:39:38.632218+00	2026-06-09 00:04:15.135306+00	1	\N	\N	\N	f	f	\N	\N
-70a4c00e-9871-4f4f-9af2-3c0a43b165ef	Tamarind	fruit	each	299	0	0	2.00	\N	0.20	14068110	t	2026-06-08 11:21:05.337751+00	2026-06-09 00:04:15.135306+00	1	\N	\N	\N	f	f	\N	\N
-21a407d8-7efd-4222-9f18-3ec3cf4f1702	Tangerine (Punnet)	fruit	each	350	0	0	2.00	\N	0.20	47330567	t	2026-05-29 15:30:45.037824+00	2026-06-09 00:04:15.135306+00	1	\N	\N	\N	f	f	\N	\N
-55db2f78-68f0-497f-a985-b1595efebcb4	Potato (Red Skin)	veg	each	120	0	60	2.00	\N	0.20	\N	t	2026-06-04 12:49:22.114571+00	2026-06-10 10:28:31.572714+00	1	\N	\N	aaaaaaaa-0001-0000-0000-000000000001	f	f	\N	\N
-7d110371-2fba-4342-ab57-f56408c98e71	Red Onion	veg	kg	135	0	43	2.00	\N	0.20	\N	f	2026-06-03 18:33:20.683053+00	2026-06-24 17:39:20.994164+00	1	17	\N	\N	f	f	\N	box
-a8df48f9-bbdc-4f25-b0b9-f329f9db2e26	Physalis	fruit	punnet	169	0	110	2.00	\N	0.20	4580437	t	2026-06-08 07:07:06.136197+00	2026-06-17 07:38:33.322741+00	1	3	\N	aaaaaaaa-0001-0000-0000-000000000001	f	f	6	retail_unit
-aa4c8f1e-92d0-4948-b630-1f3c29488bb0	Apple Royal Gala	fruit	kg	299	0	142	2.00	\N	0.20	2693458	t	2026-05-20 09:10:04.612912+00	2026-06-24 18:19:29.142773+00	12	13	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	21	box
-e0c38b88-34f8-428e-9949-26d75a23f823	Orange Blood	fruit	each	0	0	0	2.00	\N	0.20	\N	f	2026-05-29 14:42:27.550481+00	2026-06-09 21:57:10.464812+00	1	4	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	\N
-cf2816c9-a004-4a85-b2d5-82664d9ae837	Apple Golden Delicious	fruit	kg	299	0	150	2.00	\N	0.20	2602093	t	2026-05-20 09:10:04.612912+00	2026-06-24 18:19:29.142773+00	1	11	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	13	retail_unit
-14e6deff-e2c6-4cc2-a7f3-9239b079260e	Onion Regular	veg	kg	135	0	34	2.00	\N	0.20	4590130	t	2026-05-20 09:10:04.371843+00	2026-06-17 04:13:24.322496+00	1	88	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	119	box
-395969a4-c8a0-4250-9c31-160b725e56f4	Onion Prepacked	veg	kg	135	0	52	2.00	\N	0.20	51541462	t	2026-05-29 14:26:52.901547+00	2026-06-18 07:45:54.400228+00	10	1	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	\N
-e146b14f-795f-4229-8fad-1edc7b770ec7	Nectarine	fruit	each	299	0	100	2.00	\N	0.20	52186058	t	2026-05-20 09:10:04.617715+00	2026-06-17 04:13:24.322496+00	10	17	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	34	retail_unit
-4706bab8-b903-448b-8581-368dbb07356a	Parsnip	veg	kg	280	0	190	2.00	\N	0.20	4590132	t	2026-05-27 11:46:20.399382+00	2026-06-19 08:44:56.025023+00	1	19	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	9	box
-c4097681-b488-46c6-9ecc-34fb2cbeb066	Oranges Small	fruit	each	29	0	14	2.00	\N	0.20	4580429	t	2026-05-29 14:27:24.240109+00	2026-06-22 02:15:09.26565+00	80	94	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	\N	retail_unit
-db6af055-eda8-44ff-964d-c6aa60c27c9a	Apple Pink Lady	fruit	kg	433	0	188	2.00	\N	0.20	4577780	t	2026-05-20 09:10:04.612912+00	2026-06-22 02:15:09.275722+00	22	13	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	16	box
-6f859222-21e6-4a42-b7a6-ab42e914d07a	Onion Red	veg	kg	135	0	59	2.00	\N	0.20	4590131	t	2026-05-29 14:26:52.901547+00	2026-06-17 04:13:24.322496+00	1	17	\N	aaaaaaaa-0001-0000-0000-000000000001	f	f	13	retail_unit
-38369a6b-442d-4a9f-aba5-099ad5d0370e	Pea	veg	kg	700	0	111	2.00	\N	0.20	48138712	t	2026-05-20 09:10:04.620693+00	2026-06-23 08:27:44.069358+00	10	5	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	9	retail_unit
-65db7885-df5d-4330-99d1-959c433f6fd5	Onion Spanish	veg	kg	180	0	39	2.00	\N	0.20	45126940	t	2026-05-29 14:26:52.901547+00	2026-06-23 20:17:58.427292+00	20	26	\N	aaaaaaaa-0001-0000-0000-000000000001	f	f	76	retail_unit
-ed592873-f7ad-4486-b10e-fbfc3205aa01	Lettuce Iceberg	veg	each	115	0	65	2.00	\N	0.20	4590128	t	2026-05-27 11:46:20.399382+00	2026-06-24 02:02:40.228943+00	10	16	\N	aaaaaaaa-0001-0000-0000-000000000001	f	f	9	retail_unit
-e8bfae4c-a7a3-4555-850b-b7f2cca1b619	Potato Baby	veg	each	499	0	278	2.00	\N	0.20	48242178	t	2026-05-29 14:33:02.695932+00	2026-06-17 04:13:24.322496+00	9	28	\N	aaaaaaaa-0001-0000-0000-000000000001	f	f	\N	retail_unit
-0758f99c-3c18-4d63-a533-4834710443e1	Potato (Ready Peeled)	veg	bag	191	191	140	2.00	\N	0.20	7516871	t	2026-06-03 17:47:02.327269+00	2026-06-15 15:28:29.876189+00	1	\N	\N	\N	f	f	\N	retail_unit
-1c6cc1d4-7705-4692-8447-eeb815b9a4e1	Watermelon	fruit	each	450	0	92	2.00	\N	0.20	52173138	t	2026-05-20 09:10:04.371843+00	2026-06-24 02:24:52.133317+00	5	3	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	18	retail_unit
-e29d7739-a29f-48bd-bc07-3d6e7794f828	Pineapple	fruit	each	239	0	175	2.00	\N	0.20	4580438	t	2026-05-20 09:10:04.371843+00	2026-06-24 02:24:52.199346+00	8	13	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	12	box
-8e0ee101-c2ec-45a7-b0da-d9693545e0cd	Pear Conference (Punnet)	fruit	each	280	0	0	2.00	\N	0.20	46627206	t	2026-05-29 14:29:14.934267+00	2026-06-17 04:13:24.322496+00	1	9	\N	\N	f	f	\N	retail_unit
-35fac0b9-1ae9-4f97-b8eb-089b10f07ca4	Mango	fruit	each	100	0	110	2.00	\N	0.20	19997644	t	2026-05-20 09:10:04.371843+00	2026-06-24 12:46:54.935634+00	2	35	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	79	box
-a65e48ce-4a87-4a52-936f-42ce26691dae	Melon Cantaloupe	fruit	each	250	0	179	2.00	\N	0.20	4580418	t	2026-05-27 11:46:20.399382+00	2026-06-22 08:37:03.998929+00	8	8	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	8	retail_unit
-b7ccbf69-3654-4bad-8e34-66c0057dd8c9	Lettuce Cos	veg	each	160	0	77	2.00	\N	0.20	14774910	t	2026-05-27 11:46:20.399382+00	2026-06-22 01:50:29.141853+00	10	9	\N	aaaaaaaa-0001-0000-0000-000000000001	f	f	23	retail_unit
-cd6a5b06-81e9-4703-8a08-baeb6a504439	Pepper (Mixed)	veg	each	239	0	139	2.00	\N	0.20	46085511	t	2026-05-29 14:04:30.015396+00	2026-06-22 01:50:29.154823+00	10	7	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	18	retail_unit
-e670399d-e9f6-45c6-a04c-d1f242c8c4f0	Mushroom Punnet	veg	each	125	0	72	2.00	\N	0.20	46578422	t	2026-05-29 14:26:12.157548+00	2026-06-24 13:05:33.593509+00	12	57	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	90	\N
-28ff7b46-5d20-4beb-9bd0-997eeb750500	Swede	veg	kg	160	0	79	2.00	\N	0.20	4590152	t	2026-05-27 11:46:20.399382+00	2026-06-17 04:13:24.322496+00	1	9	\N	aaaaaaaa-0002-0000-0000-000000000002	f	f	8	box
+COPY public.products (id, name, category, unit, retail_price, wholesale_price, purchase_cost, price_multiplier, market_ceiling, margin_floor, epos_now_id, is_active, created_at, updated_at, case_size, weekly_units, wins_dismissed_cost, default_supplier_id, is_loss_leader, needs_review, weekly_units_recent, default_unit_type, plu_code) FROM stdin;
+5a1962b7-bc7e-4011-bd3c-00fb7620055e	Watermelon Small	fruit	each	400	0	350	2.00	\N	0.20	52207693	t	2026-06-09 10:04:27.369066+00	2026-06-24 13:05:33.593509+00	1	0	\N	\N	f	f	15	\N	\N
+fe4be91f-7b90-4427-ae30-a2ed47a831ea	Eggs Tray Large	other	each	790	0	0	2.00	\N	0.20	4580448	t	2026-06-09 09:55:33.70876+00	2026-06-09 10:04:27.362942+00	1	23	\N	\N	f	f	\N	\N	\N
+c414ebb1-1d91-46d8-afa3-3962b1d20cdb	Tomato Cherry	veg	punnet	120	0	59	2.00	\N	0.20	4590159	t	2026-05-20 09:10:04.620693+00	2026-06-25 01:48:50.578289+00	9	60	\N	11111111-0000-0000-0000-000000000001	f	f	52	box	\N
+ff4eb8e2-7fe3-4c1b-8b59-24d502b8c4c8	Milk	other	each	149	0	129	2.00	\N	0.20	4592058	t	2026-06-09 09:55:33.708403+00	2026-06-24 21:48:43.024354+00	1	190	\N	11111111-0000-0000-0000-000000000004	f	f	\N	\N	\N
+f1ecc381-a61e-4c97-b231-b34133f7d69d	Tomato	veg	kg	399	0	135	2.00	\N	0.20	4590157	t	2026-05-20 09:10:04.371843+00	2026-06-25 01:48:50.6075+00	9	31	\N	11111111-0000-0000-0000-000000000001	f	f	26	box	\N
+714aac99-97c1-4358-a82c-2b08f06437da	Garlic Peeled	veg	bag	600	600	300	2.00	\N	0.20	\N	t	2026-06-11 10:23:13.670497+00	2026-06-23 08:01:24.811631+00	1	\N	\N	\N	f	f	\N	\N	\N
+5635d13d-2ae8-49e4-b39b-fb330115cdae	Carrot Bag 1KG	veg	bag	100	0	70	2.00	\N	0.20	47064979	t	2026-06-09 09:55:33.705033+00	2026-06-24 21:40:18.591207+00	1	37	\N	\N	f	f	\N	\N	\N
+992069e0-8b07-402c-9fe7-ab747972c640	Water Bottles - 24	other	each	480	0	300	1.60	\N	0.20	50246432	t	2026-06-18 14:50:09.744755+00	2026-06-24 21:40:18.599709+00	1	\N	\N	\N	f	f	\N	\N	\N
+a64175dd-856a-4534-918b-0f772e3d1025	Potato Mids	veg	each	499	0	75	2.00	\N	0.20	\N	t	2026-05-20 09:10:04.620693+00	2026-06-24 21:48:43.024354+00	4	15	\N	11111111-0000-0000-0000-000000000003	f	f	\N	box	\N
+3a16ee54-794e-4622-873c-e08b055b60cb	Sweet Pepper	veg	each	100	0	0	2.00	\N	0.20	\N	f	2026-06-09 10:04:27.369645+00	2026-06-09 16:55:28.365381+00	1	0	\N	\N	f	f	\N	\N	\N
+78752bde-835e-446f-9c0b-fb18fd09f095	Broccoli	veg	each	100	0	45	2.00	\N	0.20	\N	t	2026-05-20 09:10:04.371843+00	2026-06-09 00:04:15.135306+00	1	\N	\N	\N	f	f	\N	\N	\N
+05f8f1e4-6616-4720-a999-15b76493989f	Cauliflower	veg	each	120	0	55	2.00	\N	0.20	\N	t	2026-05-20 09:10:04.371843+00	2026-06-09 00:04:15.135306+00	1	\N	\N	\N	f	f	\N	\N	\N
+37311bb1-1e36-44f7-9513-58b3af0e1270	Lettuce Little Gem	veg	each	129	0	0	2.00	\N	0.20	19761751	t	2026-06-09 10:04:27.370247+00	2026-06-24 21:40:18.602253+00	1	0	\N	\N	f	f	\N	\N	\N
+59a3984f-804d-41b8-b335-4c80a5cdaa43	Spinach	veg	bag	90	0	40	2.00	\N	0.20	\N	t	2026-05-20 09:10:04.371843+00	2026-06-09 00:04:15.135306+00	1	\N	\N	\N	f	f	\N	\N	\N
+ae1a3ca2-ed33-4c83-8b30-c3f2ef6895da	Nectarine Punnet	fruit	punnet	250	0	123	2.00	\N	0.20	46073190	t	2026-06-09 10:04:27.367969+00	2026-06-24 08:09:41.507506+00	10	0	\N	\N	f	f	60	retail_unit	\N
+75bf9c8c-83a4-4132-b95d-7cbcd042ce9c	Chilli (Red)	veg	each	30	0	12	2.00	\N	0.20	45598704	t	2026-05-20 09:10:04.371843+00	2026-06-24 21:40:18.610206+00	1	14	\N	\N	f	f	\N	\N	\N
+50e18db9-c0bc-4df2-8ebb-f6bdf1f979ef	Tomato Cherry Vine	veg	kg	699	0	203	2.00	\N	0.20	48735462	t	2026-05-27 11:46:20.399382+00	2026-06-24 21:48:43.024354+00	1	4	\N	11111111-0000-0000-0000-000000000001	f	f	3	retail_unit	\N
+adcb81b3-6477-4595-8bef-0977eb5cc5c0	Chinese Leaves	veg	each	149	0	88	2.00	\N	0.20	52183545	t	2026-05-27 11:46:20.399382+00	2026-06-24 21:48:43.024354+00	10	3	\N	11111111-0000-0000-0000-000000000001	f	f	3	\N	\N
+496d0599-fe3b-470d-9b9d-c2d97985995f	Gooseberry	fruit	punnet	249	0	250	2.00	\N	0.20	52258129	t	2026-06-16 20:16:24.658763+00	2026-06-24 13:05:33.593509+00	10	\N	\N	\N	t	f	\N	\N	\N
+a2d09c46-0c0f-4a89-8db3-b2e225fed27c	Potato Baby Roast	veg	kg	225	0	0	2.00	\N	0.20	4590143	t	2026-06-09 09:55:33.706393+00	2026-06-09 09:55:33.706393+00	1	27	\N	\N	f	f	\N	\N	\N
+5f9a1aca-e03e-4078-8351-daf979b7dd8d	Horseradish	veg	each	350	0	0	2.00	\N	0.20	50500343	t	2026-06-08 11:21:05.337751+00	2026-06-24 21:40:18.619121+00	1	6	\N	\N	f	f	\N	\N	\N
+787f5062-344a-497f-ae3c-c00da37b6200	Roasted Pistachios	other	each	150	0	0	2.00	\N	0.20	50153547	t	2026-06-09 09:55:33.707356+00	2026-06-09 09:55:33.707356+00	1	11	\N	\N	f	f	\N	\N	\N
+b3e45567-d165-47f4-ac58-b499e052c08f	Roasted Almonds	other	each	150	0	0	2.00	\N	0.20	50153533	t	2026-06-09 09:55:33.707995+00	2026-06-09 09:55:33.707995+00	1	5	\N	\N	f	f	\N	\N	\N
+8acd3d03-791a-4f37-ac8a-f431e74fe643	Grape Thompson	fruit	bag	200	0	90	2.00	\N	0.20	\N	f	2026-05-20 09:10:04.371843+00	2026-06-09 00:04:15.135306+00	1	\N	\N	\N	f	f	\N	\N	\N
+e2e3d36a-3576-42ec-9745-e9ab4c4d13c2	Mushroom Flat	veg	punnet	0	0	0	2.00	\N	0.20	\N	f	2026-05-20 09:10:04.620693+00	2026-06-09 00:04:15.135306+00	1	\N	\N	\N	f	f	\N	\N	\N
+53592a4b-f97d-4964-b00f-36bb4a9cae11	Chicory	veg	each	100	0	0	2.00	\N	0.20	9884793	t	2026-05-27 11:46:20.399382+00	2026-06-09 00:04:15.135306+00	1	\N	\N	\N	f	f	\N	\N	\N
+2881b04a-4d89-4eca-8180-b9293f53f791	Potato (Bag 2kg)	veg	bag	140	0	85	2.00	\N	0.20	4590146	t	2026-05-20 09:10:04.371843+00	2026-06-17 04:13:24.322496+00	1	157	\N	\N	f	f	207	retail_unit	\N
+21a4c8f2-17a0-4a25-a2c7-c8e01ffd0b92	Date Box Small	fruit	each	149	0	0	2.00	\N	0.20	51082442	t	2026-06-09 09:55:33.7069+00	2026-06-17 04:13:24.322496+00	1	20	\N	\N	f	f	\N	retail_unit	\N
+c65565e5-cdec-447c-9197-87dd8ea0576d	Watermelon Large	fruit	each	600	0	321	2.00	\N	0.20	48921831	t	2026-06-08 11:21:05.337751+00	2026-06-24 21:48:43.024354+00	6	8	\N	11111111-0000-0000-0000-000000000002	f	f	19	retail_unit	\N
+ec838c05-8951-4a5d-b931-883d80429ccc	Strawberry	fruit	punnet	250	0	140	2.00	\N	0.20	48466184	t	2026-05-20 09:10:04.371843+00	2026-06-24 21:48:43.024354+00	20	23	\N	11111111-0000-0000-0000-000000000002	f	f	3	\N	\N
+d85d0d21-166f-4fcb-967d-df877ee9b56a	Banana	fruit	kg	149	0	103	2.00	\N	0.20	4577782	t	2026-05-20 09:10:04.371843+00	2026-06-24 21:48:43.024354+00	1	74	\N	11111111-0000-0000-0000-000000000002	f	f	97	box	\N
+ed61eae5-7212-4ab0-8b27-a0a267e3936b	Melon Honeydew	fruit	each	280	0	155	2.00	\N	0.20	7516789	t	2026-05-20 09:10:04.617715+00	2026-06-24 21:48:43.024354+00	8	13	\N	11111111-0000-0000-0000-000000000002	f	f	13	box	\N
+df8d618e-d7da-4755-b47c-b89217b80d50	Grapes	fruit	punnet	239	0	179	2.00	\N	0.20	47592794	t	2026-05-20 09:10:04.371843+00	2026-06-24 21:48:43.024354+00	10	53	\N	11111111-0000-0000-0000-000000000002	f	f	79	box	\N
+cfac4e49-5427-4bf0-aa4f-64a137e49d23	Leek	veg	kg	320	0	143	2.00	\N	0.20	4590125	t	2026-05-20 09:10:04.371843+00	2026-06-24 21:48:43.024354+00	1	22	\N	11111111-0000-0000-0000-000000000002	f	f	14	box	\N
+195ac8a7-948c-4e65-ba36-e18f018907ab	Water Still 500ml	other	each	25	0	13	2.00	\N	0.20	50342025	t	2026-05-20 09:10:04.628436+00	2026-06-24 21:48:43.024354+00	24	10	\N	11111111-0000-0000-0000-000000000002	f	f	\N	\N	\N
+15e0259d-7e67-45dc-9c0f-fb77e7b20928	Apricot	fruit	each	175	0	130	2.00	\N	0.20	46128454	t	2026-05-20 09:10:04.617715+00	2026-06-24 21:48:43.024354+00	10	\N	\N	11111111-0000-0000-0000-000000000002	f	f	\N	\N	\N
+e2838162-83b6-41d9-85c2-d04f4f445967	Lemon	fruit	each	48	0	35	2.00	\N	0.20	4577796	t	2026-05-20 09:10:04.371843+00	2026-06-24 21:48:43.024354+00	64	46	\N	11111111-0000-0000-0000-000000000002	f	f	65	retail_unit	\N
+56f46a26-3c7e-41ce-ba00-dfbee7dcf626	Aubergine	veg	kg	380	0	230	2.00	\N	0.20	4590120	t	2026-05-20 09:10:04.371843+00	2026-06-24 21:48:43.024354+00	1	18	\N	11111111-0000-0000-0000-000000000001	f	f	26	box	\N
+20b47941-4381-4647-a9da-7a7506c93c33	Apple Braeburn	fruit	kg	299	0	150	2.00	\N	0.20	2693455	t	2026-05-20 09:10:04.371843+00	2026-06-24 23:29:18.491624+00	70	15	\N	11111111-0000-0000-0000-000000000002	f	f	21	retail_unit	\N
+1cfd169b-2e29-4894-a642-2662762385b0	Potato (Purple 2kg)	veg	bag	140	0	65	2.00	\N	0.20	\N	t	2026-06-09 10:36:30.218914+00	2026-06-24 21:48:43.024354+00	10	0	\N	11111111-0000-0000-0000-000000000001	f	f	\N	\N	\N
+e3e632c9-89f5-4e03-8b3d-010b6b9baf5c	Pepper (Red)	veg	kg	449	0	214	2.00	\N	0.20	4590139	t	2026-05-20 09:10:04.371843+00	2026-06-25 01:48:50.594485+00	1	48	\N	11111111-0000-0000-0000-000000000001	f	f	50	box	\N
+298c882e-26db-4c5c-bc08-40035214a9e1	Pepper (Yellow)	veg	kg	449	0	392	2.00	\N	0.20	4590141	t	2026-05-20 09:10:04.371843+00	2026-06-24 21:48:43.024354+00	1	12	\N	11111111-0000-0000-0000-000000000001	f	f	3	box	\N
+fcedb9db-6631-48cb-b785-0ae38d9b4cf9	Papaya	fruit	each	399	0	163	2.00	\N	0.20	4580430	t	2026-05-27 11:46:20.399382+00	2026-06-24 21:48:43.024354+00	4	1	\N	11111111-0000-0000-0000-000000000002	f	f	2	\N	\N
+132c41ef-8b74-4b5e-b453-14eae3006db3	Sugarsnap	veg	punnet	169	0	115	2.00	\N	0.20	4590168	t	2026-05-29 14:51:34.544+00	2026-06-24 21:48:43.024354+00	1	11	\N	11111111-0000-0000-0000-000000000002	f	f	13	retail_unit	\N
+8be94809-6c19-4f8e-b797-fe83416f4458	Potato Loose	veg	kg	120	0	91	2.00	\N	0.20	46077562	t	2026-05-20 09:10:04.620693+00	2026-06-24 21:48:43.024354+00	1	8	\N	11111111-0000-0000-0000-000000000002	f	f	22	retail_unit	\N
+66d42090-178e-42d9-9af0-3bd45ecb6931	Apple Red Delicious	fruit	kg	299	0	217	2.00	\N	0.20	4577781	t	2026-05-20 09:10:04.612912+00	2026-06-24 21:48:43.024354+00	74	7	\N	11111111-0000-0000-0000-000000000002	f	f	\N	retail_unit	\N
+6ca074f2-d330-4d85-8ac6-831c4b51d081	Apple Granny Smith	fruit	kg	299	0	146	2.00	\N	0.20	4577778	t	2026-05-20 09:10:04.612912+00	2026-06-24 21:48:43.024354+00	1	12	\N	11111111-0000-0000-0000-000000000002	f	f	5	retail_unit	\N
+719a0853-dd7c-43f6-93d0-c552775322db	Potato Washed	veg	kg	120	0	27	2.00	\N	0.20	\N	t	2026-05-20 09:10:04.620693+00	2026-06-24 21:48:43.024354+00	1	1	\N	11111111-0000-0000-0000-000000000002	f	f	\N	\N	\N
+eed32eec-e866-4a2d-abc4-315d158f0a8c	Potato Bag	veg	each	450	0	53	2.00	\N	0.20	\N	t	2026-05-29 14:33:02.695932+00	2026-06-24 21:48:43.024354+00	1	1	\N	11111111-0000-0000-0000-000000000002	f	f	14	\N	\N
+2eb8b8b5-a035-41d3-9fa3-a62c54bb34f5	Passion Fruit	fruit	each	39	0	39	2.00	\N	-1.00	4580431	t	2026-05-27 11:46:20.399382+00	2026-06-24 21:48:43.024354+00	35	53	\N	11111111-0000-0000-0000-000000000002	t	f	143	box	\N
+d91a5b6f-b0d0-423f-bd52-5d4ff99b81cf	Pear Forelle	fruit	each	280	0	170	2.00	\N	0.20	\N	t	2026-05-20 09:10:04.617715+00	2026-06-24 21:48:43.024354+00	10	\N	\N	11111111-0000-0000-0000-000000000002	f	f	\N	\N	\N
+a52d2fd6-9f5c-472c-a381-6a3f5fb71eb2	Rhubarb	fruit	each	400	0	0	2.00	\N	0.20	4590151	t	2026-05-27 11:46:20.399382+00	2026-06-24 21:48:43.024354+00	1	1	\N	11111111-0000-0000-0000-000000000002	f	f	\N	\N	\N
+a3f6f2fd-4f93-43f4-bd8f-61b13beca826	Blueberry	fruit	punnet	199	0	100	2.00	\N	0.20	47891356	t	2026-05-20 09:10:04.617715+00	2026-06-24 21:48:43.024354+00	12	8	\N	11111111-0000-0000-0000-000000000002	f	f	13	retail_unit	\N
+69e73158-0fa9-4af1-8d95-b90122512e1d	Carrot Loose	veg	kg	125	0	73	2.00	\N	0.20	4590103	t	2026-05-20 09:10:04.371843+00	2026-06-24 21:48:43.024354+00	1	86	\N	11111111-0000-0000-0000-000000000002	f	f	151	box	\N
+1ed73c76-888b-42d0-a571-3a49fec5d926	Peach	fruit	each	80	0	43	2.00	\N	0.20	4580433	t	2026-05-20 09:10:04.371843+00	2026-06-24 21:48:43.024354+00	10	4	\N	11111111-0000-0000-0000-000000000002	f	f	\N	\N	\N
+df530518-4266-4582-8c6b-964182a0a34c	Melon Galia	fruit	each	250	0	175	2.00	\N	0.20	4580415	t	2026-05-27 11:46:20.399382+00	2026-06-24 21:48:43.024354+00	8	7	\N	11111111-0000-0000-0000-000000000002	f	f	3	retail_unit	\N
+53fac4f9-9b52-4d7f-9c3a-365d9f4faeb1	Shallot	veg	each	160	0	80	2.00	\N	0.20	46301462	t	2026-05-27 11:46:20.399382+00	2026-06-24 21:48:43.024354+00	1	4	\N	11111111-0000-0000-0000-000000000002	f	f	1	retail_unit	\N
+be162566-2631-4c69-98cb-a003a193a8de	Pear Conference	fruit	kg	299	0	158	2.00	\N	0.20	4580434	t	2026-05-20 09:10:04.617715+00	2026-06-24 21:48:43.024354+00	1	26	\N	11111111-0000-0000-0000-000000000002	f	f	34	box	\N
+8314af80-11a7-4d27-a9d1-ca00943886f5	Avocado	fruit	each	115	0	83	2.00	\N	0.20	2602077	t	2026-05-20 09:10:04.371843+00	2026-06-24 21:48:43.024354+00	12	92	\N	11111111-0000-0000-0000-000000000002	f	f	161	box	\N
+d19e1db9-6c21-42c2-bbb2-f72d3a595d07	Celeriac	veg	each	299	0	100	2.00	\N	0.20	4590108	t	2026-05-27 11:46:20.399382+00	2026-06-24 21:48:43.024354+00	6	11	\N	11111111-0000-0000-0000-000000000002	f	f	11	box	\N
+4eb6760b-09ec-44d7-affe-77584fe1326b	Plastic Bags	other	each	0	0	0	2.00	\N	0.20	\N	f	2026-05-20 09:10:04.628436+00	2026-06-09 21:57:10.464812+00	1	\N	\N	\N	f	f	\N	\N	\N
+b731c695-eda5-4474-9546-c81e448aed03	Ginger	veg	each	600	0	0	2.00	\N	0.20	45702909	t	2026-05-20 09:10:04.371843+00	2026-06-12 12:24:32.581224+00	1	1	\N	\N	f	f	\N	\N	\N
+08e3bfd2-b87c-4a1b-8229-8a93b3febbe9	Celery	veg	each	120	0	63	2.00	\N	0.20	4590110	t	2026-05-20 09:10:04.371843+00	2026-06-24 21:48:43.024354+00	15	17	\N	11111111-0000-0000-0000-000000000001	f	f	24	retail_unit	\N
+bf3ad912-d591-498a-acf9-fb98f30fb4f5	Garlic Loose	veg	each	77	0	0	2.00	\N	0.20	50336822	t	2026-05-20 09:10:04.371843+00	2026-06-24 21:48:43.024354+00	20	26	\N	11111111-0000-0000-0000-000000000002	f	f	22	retail_unit	\N
+32676293-0cea-4a21-8df2-160b3b072050	Cherry	fruit	kg	1300	0	37	2.00	\N	0.20	10054732	t	2026-05-27 11:46:20.399382+00	2026-06-24 21:48:43.024354+00	1	1	\N	11111111-0000-0000-0000-000000000002	f	f	\N	\N	\N
+b9a02791-8cd0-4968-8928-3d2271576f7e	Potato Venezia	other	each	225	0	75	2.00	\N	0.20	\N	t	2026-06-09 16:29:06.17022+00	2026-06-24 21:48:43.024354+00	10	\N	\N	11111111-0000-0000-0000-000000000002	f	f	\N	\N	\N
+bfa0dc55-95ba-4554-ab06-f1d1f1b549e1	Pomelo	fruit	each	198	0	0	2.00	\N	0.20	4592059	t	2026-05-27 11:46:20.399382+00	2026-06-24 21:48:43.024354+00	1	14	\N	11111111-0000-0000-0000-000000000002	f	f	\N	\N	\N
+bf7fd091-e669-447a-930c-ced5b1d40399	Oranges Large	fruit	each	69	0	50	2.00	\N	0.20	4580428	t	2026-05-20 09:10:04.371843+00	2026-06-24 21:48:43.024354+00	1	52	\N	11111111-0000-0000-0000-000000000002	f	f	45	retail_unit	\N
+2af52c0b-c9cd-4b96-bed0-744a8240032c	Cucumber	veg	each	69	0	47	2.00	\N	0.20	4590118	t	2026-05-20 09:10:04.371843+00	2026-06-25 01:48:50.559068+00	16	240	\N	11111111-0000-0000-0000-000000000001	f	f	523	box	\N
+e4be8932-840d-4a2f-81dd-340f834cfc6c	Courgette	veg	kg	380	0	150	2.00	\N	0.20	4590114	t	2026-05-20 09:10:04.371843+00	2026-06-25 01:48:50.60231+00	1	48	\N	11111111-0000-0000-0000-000000000001	f	f	54	box	\N
+fd90e857-5390-4736-94ef-745d72d9e86f	Grapefruit	fruit	each	72	0	57	2.00	\N	0.20	4577783	t	2026-05-20 09:10:04.617715+00	2026-06-24 21:48:43.024354+00	35	32	\N	11111111-0000-0000-0000-000000000002	f	f	19	box	\N
+b4b3cc92-9e07-4b2d-8ad6-c14cbd70c4a0	Redcurrant	fruit	each	0	0	0	2.00	\N	0.20	\N	f	2026-05-27 11:46:20.399382+00	2026-06-24 21:48:43.024354+00	1	\N	\N	11111111-0000-0000-0000-000000000002	f	f	\N	\N	\N
+22a52ab2-4b4e-4eb9-a9a2-1affb2cae806	Coconut	fruit	each	100	0	0	2.00	\N	0.20	50214000	t	2026-05-29 14:45:23.17072+00	2026-06-24 21:48:43.024354+00	1	\N	\N	11111111-0000-0000-0000-000000000002	f	f	\N	\N	\N
+7b148b10-fcbe-4755-b8b4-3bad25df4f9e	Turnip	veg	each	362	0	0	2.00	\N	0.20	50491835	t	2026-05-27 11:46:20.399382+00	2026-06-24 21:48:43.024354+00	1	1	\N	11111111-0000-0000-0000-000000000002	f	f	\N	retail_unit	\N
+b7fdda44-89b9-4bf2-a349-391bd4a847fa	Hispi Cabbage	veg	each	100	0	0	2.00	\N	0.20	10757457	t	2026-05-27 11:46:20.399382+00	2026-06-09 09:55:33.695603+00	1	\N	\N	\N	f	f	\N	\N	\N
+31a26376-6be8-499d-81cc-fac9e140bc11	Red Cabbage	veg	kg	190	0	42	2.00	\N	0.20	4590102	t	2026-05-27 11:46:20.399382+00	2026-06-18 07:45:54.392571+00	1	4	\N	\N	f	f	2	box	\N
+b22c888d-a1e1-4ff1-a2d4-507f8ba43c12	Potato (Soraya)	veg	kg	140	1200	27	2.00	\N	0.20	\N	t	2026-06-03 17:50:49.063904+00	2026-06-24 21:48:43.024354+00	1	\N	\N	11111111-0000-0000-0000-000000000003	f	f	\N	retail_unit	\N
+ab636ece-2e57-4a18-92af-fc5c797f65c8	Potato Sack	veg	each	1300	0	850	2.00	\N	0.20	52169649	t	2026-05-29 14:41:12.730374+00	2026-06-15 15:28:29.876189+00	1	\N	\N	\N	f	f	3	box	\N
+32fb056f-746c-40aa-8350-cce4337ecc16	Bean Sprout	veg	each	89	0	0	2.00	\N	0.20	45840215	t	2026-05-29 14:42:01.899973+00	2026-06-24 21:48:43.024354+00	1	\N	\N	11111111-0000-0000-0000-000000000001	f	f	\N	\N	\N
+5c925564-a9c0-4a84-badc-b44ec82c2c4b	Cabbage White	veg	kg	100	0	42	2.00	\N	0.20	4590101	t	2026-05-27 11:46:20.399382+00	2026-06-24 21:48:43.024354+00	1	14	\N	11111111-0000-0000-0000-000000000001	f	f	27	box	\N
+29e4acee-70f0-4b77-8474-adf9e59cbdfa	Tomato Plum	veg	each	399	0	0	2.00	\N	0.20	48935674	f	2026-05-27 11:46:20.399382+00	2026-06-24 21:48:43.024354+00	1	\N	\N	11111111-0000-0000-0000-000000000002	f	f	\N	\N	\N
+ebb6a366-1e7f-479c-b01f-10fa862540c6	Sharon Fruit Loose	fruit	each	49	0	0	2.00	\N	0.20	9941569	t	2026-05-27 11:46:20.399382+00	2026-06-24 21:48:43.024354+00	1	55	\N	11111111-0000-0000-0000-000000000002	f	f	\N	\N	\N
+dd8cc94e-35bf-42af-ac67-5081441c58ff	Marrow	veg	each	150	0	0	2.00	\N	0.20	7821220	t	2026-05-27 11:46:20.399382+00	2026-06-24 21:48:43.024354+00	1	1	\N	11111111-0000-0000-0000-000000000002	f	f	\N	\N	\N
+96afb637-3e41-45f4-b80f-8ad592307b2a	Fig	fruit	each	69	0	0	2.00	\N	0.20	10285274	t	2026-05-27 11:46:20.399382+00	2026-06-24 21:48:43.024354+00	1	\N	\N	11111111-0000-0000-0000-000000000002	f	f	\N	\N	\N
+faaf74b9-b647-4b9b-b3ef-9ec896ccf58c	Chocolate (Test)	other	box	1000	700	333	3.00	700	0.40	\N	f	2026-06-09 18:13:39.357718+00	2026-06-12 02:41:32.705247+00	1	\N	\N	\N	f	f	\N	\N	\N
+ccf693c0-8893-4258-a09b-78eb3a4f51ca	Radish	veg	each	66	0	38	2.00	\N	0.20	4590150	t	2026-05-27 11:46:20.399382+00	2026-06-24 21:48:43.024354+00	1	\N	\N	11111111-0000-0000-0000-000000000002	f	f	6	retail_unit	\N
+6a64335e-5911-4cef-b6ad-64f23d91a326	Potato Mini	veg	each	499	0	188	2.00	\N	0.20	51657143	t	2026-05-29 14:33:02.695932+00	2026-06-12 10:41:03.855979+00	1	\N	\N	\N	f	f	21	\N	\N
+7fa9b02c-bf78-4c91-ae1c-1699e0514c9f	Apricot Punnet	fruit	each	250	0	140	2.00	\N	0.20	20296294	t	2026-05-29 15:25:51.010664+00	2026-06-24 21:40:18.593327+00	1	\N	\N	\N	f	f	\N	\N	\N
+febeb6c1-ca53-46ce-8716-3eb0767f80af	Granadilla	fruit	each	139	0	0	2.00	\N	0.20	39091840	t	2026-05-29 15:31:55.619742+00	2026-06-24 21:40:18.606525+00	1	\N	\N	\N	f	f	\N	\N	\N
+7877beaf-2858-462d-aa1e-a784f1407fea	Beetroot	veg	kg	198	0	60	2.00	\N	0.20	46621621	t	2026-05-27 11:46:20.399382+00	2026-06-24 21:48:43.024354+00	1	3	\N	11111111-0000-0000-0000-000000000002	f	f	4	retail_unit	\N
+0f834057-4287-47f1-9e10-3798d12cec36	Chestnuts	fruit	each	10	0	0	2.00	\N	0.20	4580427	t	2026-05-29 14:49:16.28145+00	2026-06-24 21:48:43.024354+00	1	\N	\N	11111111-0000-0000-0000-000000000002	f	f	\N	\N	\N
+b652b426-6068-4eba-82ac-2ffc78424d3a	Dragon Fruit	fruit	each	200	0	0	2.00	\N	0.20	45702915	f	2026-05-29 14:45:23.17072+00	2026-06-24 21:48:43.024354+00	1	1	\N	11111111-0000-0000-0000-000000000002	f	f	\N	\N	\N
+b14acd54-6d55-4368-afb4-772a60542e84	Plums Punnet	fruit	each	199	0	120	2.00	\N	0.20	47399643	t	2026-05-29 14:30:18.515881+00	2026-06-24 21:48:43.024354+00	10	\N	\N	11111111-0000-0000-0000-000000000002	f	f	\N	\N	\N
+11262918-0398-495f-b9b9-53a098408d98	Pear Chinese	fruit	each	0	0	0	2.00	\N	0.20	\N	f	2026-05-29 14:53:42.918515+00	2026-06-24 21:48:43.024354+00	1	\N	\N	11111111-0000-0000-0000-000000000002	f	f	\N	\N	\N
+2f7eddd0-c7d3-43cb-a8bc-62faf498d7bf	Melon Dino	fruit	each	0	0	0	2.00	\N	0.20	\N	f	2026-05-29 14:24:06.379576+00	2026-06-24 21:48:43.024354+00	1	\N	\N	11111111-0000-0000-0000-000000000002	f	f	\N	\N	\N
+c899cad1-dc28-4ef2-bcad-63203d5f9743	Medjool Date	fruit	each	1480	0	600	2.00	\N	0.20	46691283	t	2026-05-27 11:46:20.399382+00	2026-06-24 21:48:43.024354+00	1	14	\N	11111111-0000-0000-0000-000000000002	f	f	\N	retail_unit	\N
+653bcc89-e1c8-445d-9d69-e5270bfd348c	Lettuce (Pesach)	veg	each	0	0	0	2.00	\N	0.20	\N	f	2026-05-29 14:21:11.176872+00	2026-06-24 21:48:43.024354+00	1	\N	\N	11111111-0000-0000-0000-000000000002	f	f	\N	\N	\N
+da619c22-35f8-4090-b8f2-b9c7894f4607	Pear Qtee Punnet	fruit	each	0	0	0	2.00	\N	0.20	\N	f	2026-05-29 14:53:42.918515+00	2026-06-24 21:48:43.024354+00	1	\N	\N	11111111-0000-0000-0000-000000000002	f	f	\N	\N	\N
+2a8cc3bc-6f69-4980-af8b-8345f693ec10	Grape Sweet Globe	fruit	each	240	0	0	2.00	\N	0.20	\N	f	2026-05-27 11:46:20.399382+00	2026-06-09 00:04:15.135306+00	1	\N	\N	\N	f	f	\N	\N	\N
+edaff518-554f-40d1-94bf-ce88036cb7b0	Spring Onion	veg	bunch	60	0	25	2.00	\N	0.20	\N	t	2026-05-20 09:10:04.371843+00	2026-06-24 21:48:43.024354+00	1	\N	\N	11111111-0000-0000-0000-000000000001	f	f	\N	\N	\N
+7d48b88d-6791-4182-b624-8f58b303035e	Mushroom Button	veg	punnet	146	0	115	2.00	\N	0.20	52184056	t	2026-05-20 09:10:04.371843+00	2026-06-25 01:48:50.570583+00	12	19	\N	11111111-0000-0000-0000-000000000001	f	f	8	retail_unit	\N
+2909b1af-bfcf-45cb-80ed-c197d2a8e80f	Kohlrabi	veg	kg	420	0	213	2.00	\N	0.20	46030632	t	2026-05-27 11:46:20.399382+00	2026-06-17 04:13:24.322496+00	1	13	\N	\N	f	f	17	retail_unit	\N
+32322628-aca1-4280-8a83-8a4133546bbb	Strawberry Punnet	fruit	punnet	160	0	80	2.00	\N	0.20	4580443	t	2026-06-08 11:21:05.337751+00	2026-06-24 12:46:54.935634+00	1	\N	\N	\N	f	f	13	\N	\N
+b90e4e16-a6df-4f8a-a99a-c36420942e9a	Garlic Prepack	veg	each	240	0	80	2.00	\N	0.20	46152000	t	2026-05-29 15:32:57.490769+00	2026-06-17 04:13:24.322496+00	1	10	\N	\N	f	f	13	retail_unit	\N
+af76c0f4-fe39-4ed4-9b25-ca9a1fd2ef9c	Carrot Prepack	veg	each	100	0	80	2.00	\N	0.20	\N	f	2026-05-29 15:30:45.037824+00	2026-06-24 13:05:33.593509+00	1	33	\N	\N	f	f	\N	\N	\N
+81e4479c-dfaf-4d8b-8f7f-d63bade35e6b	Pepper (Orange)	veg	each	50	0	300	2.00	\N	0.20	\N	f	2026-05-20 09:10:04.371843+00	2026-06-24 21:48:43.024354+00	1	\N	\N	11111111-0000-0000-0000-000000000001	f	f	\N	\N	\N
+1dcd2a92-3093-4328-a17f-6333249ef914	Sweet Potato	veg	each	299	0	156	2.00	\N	0.20	4590154	t	2026-05-20 09:10:04.371843+00	2026-06-24 21:48:43.024354+00	1	43	\N	11111111-0000-0000-0000-000000000002	f	f	72	box	\N
+75051582-5d94-4382-98c9-072385112013	Bean Fine	veg	punnet	169	0	95	2.00	\N	0.20	4590164	t	2026-05-27 11:46:20.399382+00	2026-06-17 07:38:33.310915+00	1	9	\N	\N	f	f	6	\N	\N
+fbb5becc-cca4-4122-a65b-4a447c5f926c	Plum	fruit	each	60	0	25	2.00	\N	0.20	\N	f	2026-05-20 09:10:04.371843+00	2026-06-24 21:48:43.024354+00	1	\N	\N	11111111-0000-0000-0000-000000000002	f	f	\N	box	\N
+37b38db2-5697-4dae-8200-f292bcd2032c	Salad Cress	veg	each	44	0	18	2.00	\N	0.20	4590117	t	2026-05-27 11:46:20.399382+00	2026-06-24 21:48:43.024354+00	16	22	\N	11111111-0000-0000-0000-000000000002	f	f	16	retail_unit	\N
+3e03f4e8-2521-4bed-9e2a-a26bb507e8f3	Tangerine	fruit	each	0	0	0	2.00	\N	0.20	\N	f	2026-05-20 09:10:04.617715+00	2026-06-24 21:48:43.024354+00	1	23	\N	11111111-0000-0000-0000-000000000002	f	f	42	box	\N
+32818a27-e07f-43d9-a957-2a90aac27181	Potato	veg	kg	120	0	65	2.00	\N	0.20	\N	t	2026-05-20 09:10:04.632632+00	2026-06-24 21:48:43.024354+00	10	\N	\N	11111111-0000-0000-0000-000000000002	f	f	\N	box	\N
+0899b85f-f1f0-43bd-8912-211e0b14e9ff	Sharon Fruit Punnet	fruit	each	350	0	0	2.00	\N	0.20	46984385	t	2026-05-29 14:39:41.016329+00	2026-06-24 21:48:43.024354+00	1	\N	\N	11111111-0000-0000-0000-000000000002	f	f	\N	\N	\N
+31b54cad-4d38-4cb1-b9d6-091deacd53b3	Butternut Squash	veg	kg	260	0	85	2.00	\N	0.20	46020023	t	2026-05-20 09:10:04.371843+00	2026-06-24 21:48:43.024354+00	10	17	\N	11111111-0000-0000-0000-000000000002	f	f	\N	box	\N
+72006aef-fabd-425e-bca7-439587c674b1	Plums Loose	fruit	kg	360	0	300	2.00	\N	0.20	4580440	t	2026-05-20 09:10:04.617715+00	2026-06-24 21:48:43.024354+00	1	20	\N	11111111-0000-0000-0000-000000000002	f	f	4	retail_unit	\N
+51a7e9ba-f37b-4fff-8a54-78e664466bb9	Melon Piel de Sapo	fruit	each	250	0	189	2.00	\N	0.20	4580417	t	2026-05-29 14:24:06.379576+00	2026-06-24 21:48:43.024354+00	1	1	\N	11111111-0000-0000-0000-000000000002	f	f	\N	\N	\N
+6d4ac15f-5c33-4b70-8ad8-641bc710d2cb	Starfruit	fruit	each	199	0	150	2.00	\N	0.20	50207600	t	2026-05-29 14:35:01.869536+00	2026-06-24 21:48:43.024354+00	1	\N	\N	11111111-0000-0000-0000-000000000002	f	f	\N	\N	\N
+c2a488d5-3700-424b-af2a-cdc0b4643de9	Garlic Peeled Pack	veg	each	690	0	270	2.00	\N	0.20	\N	t	2026-05-29 15:32:57.490769+00	2026-06-09 00:04:15.135306+00	1	\N	\N	\N	f	f	\N	\N	\N
+be2293d5-4a16-4ca6-a40a-294c26a4ae85	Lime	fruit	each	43	0	15	2.00	\N	0.20	9764517	t	2026-05-20 09:10:04.371843+00	2026-06-24 21:48:43.024354+00	48	4	\N	11111111-0000-0000-0000-000000000002	f	f	\N	\N	\N
+3d4f1023-ca6a-413c-8018-384a605c4c42	Tangerine	fruit	kg	333	0	186	2.00	\N	0.20	4580444	t	2026-05-27 11:46:20.399382+00	2026-06-24 21:48:43.024354+00	72	\N	\N	11111111-0000-0000-0000-000000000002	f	f	42	retail_unit	\N
+a7ffe61b-7b35-4a8c-bc6c-3c73b4902954	Apple Variety	fruit	each	199	0	0	2.00	\N	0.20	19247718	t	2026-05-29 14:45:23.17072+00	2026-06-24 21:48:43.024354+00	1	\N	\N	11111111-0000-0000-0000-000000000002	f	f	\N	retail_unit	\N
+a721d816-6aaa-48f8-b8eb-95492999bd25	Pear Williams Punnet	fruit	each	0	0	0	2.00	\N	0.20	\N	f	2026-05-29 14:53:42.918515+00	2026-06-24 21:48:43.024354+00	1	\N	\N	11111111-0000-0000-0000-000000000002	f	f	\N	\N	\N
+9aaf97d9-8de5-4077-954d-e649f084c29b	Kiwi Loose	fruit	each	55	0	37	2.00	\N	0.20	4577795	t	2026-05-20 09:10:04.371843+00	2026-06-24 21:48:43.024354+00	28	60	\N	11111111-0000-0000-0000-000000000002	f	f	49	box	\N
+3cd3111e-cc89-46af-a825-fe8afa27e7ce	Apple Cox	fruit	each	0	0	0	2.00	\N	0.20	\N	f	2026-05-20 09:10:04.612912+00	2026-06-24 21:48:43.024354+00	1	\N	\N	11111111-0000-0000-0000-000000000002	f	f	\N	\N	\N
+78b3d11d-2c16-48c3-ae2f-187588e89c28	Lychee	fruit	each	20	0	18	2.00	\N	-1.00	46181620	t	2026-05-27 11:46:20.399382+00	2026-06-24 21:48:43.024354+00	90	20	\N	11111111-0000-0000-0000-000000000002	f	f	197	retail_unit	\N
+129f301b-2406-4003-8668-584f515779ee	Kiwi Prepack	fruit	each	299	0	0	2.00	\N	0.20	46998788	t	2026-05-29 15:39:38.632218+00	2026-06-09 00:04:15.135306+00	1	\N	\N	\N	f	f	\N	\N	\N
+70a4c00e-9871-4f4f-9af2-3c0a43b165ef	Tamarind	fruit	each	299	0	0	2.00	\N	0.20	14068110	t	2026-06-08 11:21:05.337751+00	2026-06-09 00:04:15.135306+00	1	\N	\N	\N	f	f	\N	\N	\N
+21a407d8-7efd-4222-9f18-3ec3cf4f1702	Tangerine (Punnet)	fruit	each	350	0	0	2.00	\N	0.20	47330567	t	2026-05-29 15:30:45.037824+00	2026-06-09 00:04:15.135306+00	1	\N	\N	\N	f	f	\N	\N	\N
+cd6a5b06-81e9-4703-8a08-baeb6a504439	Pepper (Mixed)	veg	each	239	0	200	2.00	\N	0.20	46085511	t	2026-05-29 14:04:30.015396+00	2026-06-25 01:48:50.585864+00	10	7	\N	11111111-0000-0000-0000-000000000002	f	f	18	retail_unit	\N
+7d110371-2fba-4342-ab57-f56408c98e71	Red Onion	veg	kg	135	0	43	2.00	\N	0.20	\N	f	2026-06-03 18:33:20.683053+00	2026-06-24 17:39:20.994164+00	1	17	\N	\N	f	f	\N	box	\N
+b7ccbf69-3654-4bad-8e34-66c0057dd8c9	Lettuce Cos	veg	each	160	0	77	2.00	\N	0.20	14774910	t	2026-05-27 11:46:20.399382+00	2026-06-24 21:48:43.024354+00	10	9	\N	11111111-0000-0000-0000-000000000001	f	f	23	retail_unit	\N
+e8bfae4c-a7a3-4555-850b-b7f2cca1b619	Potato Baby	veg	each	499	0	278	2.00	\N	0.20	48242178	t	2026-05-29 14:33:02.695932+00	2026-06-24 21:48:43.024354+00	9	28	\N	11111111-0000-0000-0000-000000000001	f	f	\N	retail_unit	\N
+ed592873-f7ad-4486-b10e-fbfc3205aa01	Lettuce Iceberg	veg	each	115	0	65	2.00	\N	0.20	4590128	t	2026-05-27 11:46:20.399382+00	2026-06-24 21:48:43.024354+00	10	16	\N	11111111-0000-0000-0000-000000000001	f	f	9	retail_unit	\N
+65db7885-df5d-4330-99d1-959c433f6fd5	Onion Spanish	veg	kg	180	0	39	2.00	\N	0.20	45126940	t	2026-05-29 14:26:52.901547+00	2026-06-24 21:48:43.024354+00	20	26	\N	11111111-0000-0000-0000-000000000001	f	f	76	retail_unit	\N
+6f859222-21e6-4a42-b7a6-ab42e914d07a	Onion Red	veg	kg	135	0	59	2.00	\N	0.20	4590131	t	2026-05-29 14:26:52.901547+00	2026-06-24 21:48:43.024354+00	1	17	\N	11111111-0000-0000-0000-000000000001	f	f	13	retail_unit	\N
+a8df48f9-bbdc-4f25-b0b9-f329f9db2e26	Physalis	fruit	punnet	169	0	110	2.00	\N	0.20	4580437	t	2026-06-08 07:07:06.136197+00	2026-06-24 21:48:43.024354+00	1	3	\N	11111111-0000-0000-0000-000000000001	f	f	6	retail_unit	\N
+55db2f78-68f0-497f-a985-b1595efebcb4	Potato (Red Skin)	veg	each	120	0	60	2.00	\N	0.20	\N	t	2026-06-04 12:49:22.114571+00	2026-06-24 21:48:43.024354+00	1	\N	\N	11111111-0000-0000-0000-000000000001	f	f	\N	\N	\N
+28ff7b46-5d20-4beb-9bd0-997eeb750500	Swede	veg	kg	160	0	79	2.00	\N	0.20	4590152	t	2026-05-27 11:46:20.399382+00	2026-06-24 21:48:43.024354+00	1	9	\N	11111111-0000-0000-0000-000000000002	f	f	8	box	\N
+e670399d-e9f6-45c6-a04c-d1f242c8c4f0	Mushroom Punnet	veg	each	125	0	72	2.00	\N	0.20	46578422	t	2026-05-29 14:26:12.157548+00	2026-06-24 21:48:43.024354+00	12	57	\N	11111111-0000-0000-0000-000000000002	f	f	90	\N	\N
+a65e48ce-4a87-4a52-936f-42ce26691dae	Melon Cantaloupe	fruit	each	250	0	179	2.00	\N	0.20	4580418	t	2026-05-27 11:46:20.399382+00	2026-06-24 21:48:43.024354+00	8	8	\N	11111111-0000-0000-0000-000000000002	f	f	8	retail_unit	\N
+35fac0b9-1ae9-4f97-b8eb-089b10f07ca4	Mango	fruit	each	100	0	110	2.00	\N	0.20	19997644	t	2026-05-20 09:10:04.371843+00	2026-06-24 21:48:43.024354+00	2	35	\N	11111111-0000-0000-0000-000000000002	f	f	79	box	\N
+0758f99c-3c18-4d63-a533-4834710443e1	Potato (Ready Peeled)	veg	bag	191	191	140	2.00	\N	0.20	7516871	t	2026-06-03 17:47:02.327269+00	2026-06-15 15:28:29.876189+00	1	\N	\N	\N	f	f	\N	retail_unit	\N
+8e0ee101-c2ec-45a7-b0da-d9693545e0cd	Pear Conference (Punnet)	fruit	each	280	0	0	2.00	\N	0.20	46627206	t	2026-05-29 14:29:14.934267+00	2026-06-17 04:13:24.322496+00	1	9	\N	\N	f	f	\N	retail_unit	\N
+e29d7739-a29f-48bd-bc07-3d6e7794f828	Pineapple	fruit	each	239	0	175	2.00	\N	0.20	4580438	t	2026-05-20 09:10:04.371843+00	2026-06-24 21:48:43.024354+00	8	13	\N	11111111-0000-0000-0000-000000000002	f	f	12	box	\N
+1c6cc1d4-7705-4692-8447-eeb815b9a4e1	Watermelon	fruit	each	450	0	92	2.00	\N	0.20	52173138	t	2026-05-20 09:10:04.371843+00	2026-06-24 21:48:43.024354+00	5	3	\N	11111111-0000-0000-0000-000000000002	f	f	18	retail_unit	\N
+38369a6b-442d-4a9f-aba5-099ad5d0370e	Pea	veg	kg	700	0	111	2.00	\N	0.20	48138712	t	2026-05-20 09:10:04.620693+00	2026-06-24 21:48:43.024354+00	10	5	\N	11111111-0000-0000-0000-000000000002	f	f	9	retail_unit	\N
+db6af055-eda8-44ff-964d-c6aa60c27c9a	Apple Pink Lady	fruit	kg	433	0	188	2.00	\N	0.20	4577780	t	2026-05-20 09:10:04.612912+00	2026-06-24 21:48:43.024354+00	22	13	\N	11111111-0000-0000-0000-000000000002	f	f	16	box	\N
+c4097681-b488-46c6-9ecc-34fb2cbeb066	Oranges Small	fruit	each	29	0	14	2.00	\N	0.20	4580429	t	2026-05-29 14:27:24.240109+00	2026-06-24 21:48:43.024354+00	80	94	\N	11111111-0000-0000-0000-000000000002	f	f	\N	retail_unit	\N
+4706bab8-b903-448b-8581-368dbb07356a	Parsnip	veg	kg	280	0	190	2.00	\N	0.20	4590132	t	2026-05-27 11:46:20.399382+00	2026-06-24 21:48:43.024354+00	1	19	\N	11111111-0000-0000-0000-000000000002	f	f	9	box	\N
+e146b14f-795f-4229-8fad-1edc7b770ec7	Nectarine	fruit	each	299	0	100	2.00	\N	0.20	52186058	t	2026-05-20 09:10:04.617715+00	2026-06-24 21:48:43.024354+00	10	17	\N	11111111-0000-0000-0000-000000000002	f	f	34	retail_unit	\N
+395969a4-c8a0-4250-9c31-160b725e56f4	Onion Prepacked	veg	kg	135	0	52	2.00	\N	0.20	51541462	t	2026-05-29 14:26:52.901547+00	2026-06-24 21:48:43.024354+00	10	1	\N	11111111-0000-0000-0000-000000000002	f	f	\N	\N	\N
+14e6deff-e2c6-4cc2-a7f3-9239b079260e	Onion Regular	veg	kg	135	0	34	2.00	\N	0.20	4590130	t	2026-05-20 09:10:04.371843+00	2026-06-24 21:48:43.024354+00	1	88	\N	11111111-0000-0000-0000-000000000002	f	f	119	box	\N
+e0c38b88-34f8-428e-9949-26d75a23f823	Orange Blood	fruit	each	0	0	0	2.00	\N	0.20	\N	f	2026-05-29 14:42:27.550481+00	2026-06-24 21:48:43.024354+00	1	4	\N	11111111-0000-0000-0000-000000000002	f	f	\N	\N	\N
+cf2816c9-a004-4a85-b2d5-82664d9ae837	Apple Golden Delicious	fruit	kg	299	0	150	2.00	\N	0.20	2602093	t	2026-05-20 09:10:04.612912+00	2026-06-24 21:48:43.024354+00	1	11	\N	11111111-0000-0000-0000-000000000002	f	f	13	retail_unit	\N
+aa4c8f1e-92d0-4948-b630-1f3c29488bb0	Apple Royal Gala	fruit	kg	299	0	142	2.00	\N	0.20	2693458	t	2026-05-20 09:10:04.612912+00	2026-06-24 21:48:43.024354+00	12	13	\N	11111111-0000-0000-0000-000000000002	f	f	21	box	\N
+aabdd6c6-8ada-43b0-bcfd-08e0d87a47d0	Apple Cripps Pink	fruit	each	299	0	150	2.00	\N	0.20	\N	t	2026-05-20 09:10:04.612912+00	2026-06-24 21:48:43.024354+00	1	\N	\N	11111111-0000-0000-0000-000000000002	f	f	\N	\N	\N
+55b6a02c-33a1-4f36-b857-abff74aff428	Apple Bramley	fruit	kg	332	0	169	2.00	\N	0.20	48180213	t	2026-05-20 09:10:04.612912+00	2026-06-24 21:48:43.024354+00	1	\N	\N	11111111-0000-0000-0000-000000000002	f	f	8	retail_unit	\N
+b3b40799-e152-443b-b65e-21c530579670	Pomegranate	fruit	each	150	0	104	2.00	\N	0.20	51444342	t	2026-05-20 09:10:04.617715+00	2026-06-24 21:48:43.024354+00	8	35	\N	11111111-0000-0000-0000-000000000002	f	f	\N	retail_unit	\N
+5d5fd9f2-5232-4eb5-9c12-7e6d58058849	Mushroom Regular	veg	kg	458	0	229	2.00	\N	0.20	4590129	t	2026-05-29 14:26:12.157548+00	2026-06-24 21:48:43.024354+00	1	19	\N	11111111-0000-0000-0000-000000000002	f	f	6	box	\N
 \.
 
 
@@ -10227,6 +10279,13 @@ ccc12668-0957-483c-9d9a-3df961c1c06b	c613a4c3-00a7-4a51-846f-23e279be7901	3d4f10
 f017813d-67de-46ca-8e61-d9bd019a42bd	b663b50a-ce08-4335-9654-293e37d04e16	3d4f1023-ca6a-413c-8018-384a605c4c42	CLEMENTINE NARDOCOTT MA . . . Gold cup x 80	1.000	2000	2000	\N	\N	t	2026-06-03 07:42:14.807383+00	80	count	\N	\N
 e3324146-b3ad-4cf1-a0dc-f1d06121d303	9a77496d-5b58-479b-a3b2-8d9238210838	cfac4e49-5427-4bf0-aa4f-64a137e49d23	LEEKS - WOOD BOX	2.000	720	1440	\N	\N	t	2026-06-16 07:36:16.056126+00	1	weight	4.50	\N
 e78a8a08-02d7-496a-8d31-ef7c0280382b	9a77496d-5b58-479b-a3b2-8d9238210838	6f859222-21e6-4a42-b7a6-ab42e914d07a	RED ONIONS - EGYPTIAN	1.000	450	450	\N	\N	t	2026-06-16 07:36:16.056126+00	\N	weight	5.00	\N
+57c52935-ab37-4e2a-97c7-b147bf66dd74	c17db795-1e2e-4c8a-a6cc-b7658e82cfd8	f1ecc381-a61e-4c97-b231-b34133f7d69d	DUTCH TOMATOES - PRIME TOM	4.000	480	1920	\N	\N	t	2026-06-25 01:48:50.390998+00	1	weight	5.00	\N
+8cb44646-1f06-4901-8611-90f009cf3fca	c17db795-1e2e-4c8a-a6cc-b7658e82cfd8	2af52c0b-c9cd-4b96-bed0-744a8240032c	CUCUMBERS - X16 DUTCH	13.000	900	11700	\N	\N	t	2026-06-25 01:48:50.390998+00	16	count	\N	\N
+030b9929-9b51-40a9-8017-5a2d89e19046	c17db795-1e2e-4c8a-a6cc-b7658e82cfd8	7d48b88d-6791-4182-b624-8f58b303035e	MUSHROOM - PP X12	1.000	860	860	\N	\N	t	2026-06-25 01:48:50.390998+00	12	count	\N	\N
+e51bb985-4eea-4489-b1b6-f955a23bdeee	c17db795-1e2e-4c8a-a6cc-b7658e82cfd8	e4be8932-840d-4a2f-81dd-340f834cfc6c	COURGETTES - CHATA	1.000	750	750	\N	\N	t	2026-06-25 01:48:50.390998+00	1	weight	5.00	\N
+9243d563-198b-4dda-943d-72315197496d	c17db795-1e2e-4c8a-a6cc-b7658e82cfd8	e3e632c9-89f5-4e03-8b3d-010b6b9baf5c	RED PEPPERS - UK LARGE	1.000	1300	1300	\N	\N	t	2026-06-25 01:48:50.390998+00	\N	weight	5.00	\N
+e53a38eb-0910-4492-97a5-63ccd8ed7890	c17db795-1e2e-4c8a-a6cc-b7658e82cfd8	cd6a5b06-81e9-4703-8a08-baeb6a504439	MIXED PEPPERS - DUTCH TRI COLOURS	1.000	1450	1450	\N	\N	t	2026-06-25 01:48:50.390998+00	1	count	\N	\N
+b3ca0c59-d00c-450c-afa9-6b4de35af6c8	c17db795-1e2e-4c8a-a6cc-b7658e82cfd8	c414ebb1-1d91-46d8-afa3-3962b1d20cdb	CHERRY TOMATOES - DUTCH X9	2.000	480	960	\N	\N	t	2026-06-25 01:48:50.390998+00	9	count	\N	\N
 43781a3c-b26c-4e0b-bd42-8584f17255f7	5e84fc51-bb84-4339-b927-14662a2a312b	fd90e857-5390-4736-94ef-745d72d9e86f	GRAPEFRUIT STAR RUBY TURKEY 36 15KG	1.000	2000	2000	\N	\N	t	2026-06-03 07:42:12.980956+00	\N	weight	15.00	\N
 2c1124a2-74ae-4643-adfa-4b1adb408422	5e84fc51-bb84-4339-b927-14662a2a312b	e29d7739-a29f-48bd-bc07-3d6e7794f828	PINEAPPLE . COSTA RICA 8 10KG	1.000	1150	1150	\N	\N	t	2026-06-03 07:42:13.434117+00	\N	count	\N	\N
 7dd52879-4a2d-4979-acb1-f56386365307	99cb042f-81f6-4a25-84d9-0a944da5f856	b7ccbf69-3654-4bad-8e34-66c0057dd8c9	LETTUCE COS SPAIN 12 5KG	1.000	1050	1050	\N	\N	t	2026-06-03 07:42:08.399165+00	\N	\N	\N	\N
@@ -10774,6 +10833,7 @@ ce9c7b3b-3ccc-48ac-b666-3a4700b333ec	88e2117e-0de5-4ffc-9419-6a770ac66a30	1dcd2a
 
 COPY public.purchase_invoices (id, supplier_id, supplier_name, invoice_date, pdf_url, total_amount, status, created_by, created_at, invoice_number) FROM stdin;
 cccccccc-0019-0000-0000-000000020019	11111111-0000-0000-0000-000000000004	The Milk Company	2026-06-19	\N	30960	processed	d8385f7d-1f57-47f5-9570-8f082c5214b4	2026-06-24 14:04:38.836262+00	20019
+c17db795-1e2e-4c8a-a6cc-b7658e82cfd8	\N	JR Holland	2026-06-25	jr-holland/2026-06-25/8b30d45c-6fc3-496b-9f8f-ca2b655d8aa4.pdf	18940	processed	\N	2026-06-25 01:48:49.944878+00	2748327
 eca8e6a3-a005-4aaf-828c-723570f727a1	11111111-0000-0000-0000-000000000002	Total Produce	2026-03-09	11050174	51630	processed	\N	2026-06-03 07:43:21.013161+00	\N
 b8a15f5d-4031-443e-bd7c-b7865d0c0ac9	11111111-0000-0000-0000-000000000002	Total Produce	2026-03-10	11052491	31900	processed	\N	2026-06-03 07:43:22.741915+00	\N
 861967c0-d5ae-494f-9033-d1840823bd67	11111111-0000-0000-0000-000000000002	Total Produce	2026-03-11	11054647	46420	processed	\N	2026-06-03 07:43:24.185672+00	\N
@@ -11499,129 +11559,21 @@ ac89984c-3fbc-4a16-87ed-4cb0d83ba8e3	11111111-0000-0000-0000-000000000003	Thomas
 
 
 --
--- Data for Name: purchase_suppliers; Type: TABLE DATA; Schema: public; Owner: postgres
---
-
-COPY public.purchase_suppliers (id, name, is_active, created_at) FROM stdin;
-aaaaaaaa-0001-0000-0000-000000000001	JR Holland	t	2026-06-09 18:19:12.115838+00
-aaaaaaaa-0002-0000-0000-000000000002	Total Produce	t	2026-06-09 18:19:12.115838+00
-aaaaaaaa-0003-0000-0000-000000000003	Thomas Baty	t	2026-06-09 18:19:12.115838+00
-aaaaaaaa-0004-0000-0000-000000000004	The Milk Company	t	2026-06-24 14:04:38.836262+00
-\.
-
-
---
 -- Data for Name: sales_data; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
 COPY public.sales_data (id, product_id, product_name_raw, quantity_sold, revenue, sale_date, source, imported_at, epos_product_id) FROM stdin;
-7bbe977b-34f1-4975-9848-f45d7e7c52da	\N	Apples Braeburn	86.862	25972	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	2693455
-19f7819a-e318-41b8-9401-d50e8fb6a689	\N	Apple Cooking	13.832	4592	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	48180213
-1202f099-2e5b-49b1-9ef5-8458ad7ad6a6	\N	Apples Gala	52.606	15729	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	2693458
-52ca4078-af95-4dad-a5ef-d9267d5c2c7c	\N	Apples Golden	44.564	13325	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	2602093
-c3be6311-1c20-487d-96ee-21f3b6f053ab	\N	Apples Granny	27.312	8166	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4577778
-1f5f1eff-8e1a-49a6-9cfc-eff0fe379d58	\N	Apples Pink Lady	36.466	15790	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4577780
-1f34ad91-8852-404c-bf1a-3abb75427d9e	\N	Apples Red Delicious	10.256	3067	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4577781
-1ce29c4f-bcb1-481e-a27f-6fd89f689fda	\N	Apricot Loose	2.000	40	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	46128454
-37546a9b-6639-43f7-bf8c-873250224347	\N	Aubergine	66.578	25300	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590120
-edb26676-e6e5-49be-ad70-3f0cc9e005d7	\N	Avocado	367.000	40003	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	2602077
-62638f7b-b69b-4a65-a25c-ec5aa251dba7	\N	Banana	205.572	36558	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4577782
-9d195d74-cd1f-4f86-b2a1-17a2355cc05c	\N	Bean Sprouts	2.000	178	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	45840215
-dace3e75-3d4b-4ce6-8b00-75a4430b67f8	\N	Beetroot Loose	14.270	2825	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	46621621
-cce8bb16-4813-407a-bbbc-8e0232a402a2	\N	Blueberry	34.000	6766	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	47891356
-81453747-e04e-4c68-a421-1db5e37d46a5	\N	Butternut Squash	52.877	13748	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	46020023
-9e308db5-b257-42f9-b671-fd3a09dd3951	\N	Cabbage Red	10.586	2011	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590102
-47552627-a6ed-4c7f-abc8-012e4c1bf66d	\N	Cabbage White	78.934	7893	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590101
-2842acfe-b2b9-4ee8-b9d5-6cf8f2898c3f	\N	Carrot Bag 1KG	118.000	16402	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	47064979
-9116c641-ddf8-4390-984b-103ca6325922	\N	Carrots	300.388	37549	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590103
-ad97003d-a544-41b3-b36c-259ae104b6ea	\N	Celeriac	35.764	10693	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590108
-13be363e-02fd-4f9a-8a7a-b016f85cc63d	\N	Celery	55.000	7470	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590110
-2299ba2e-7624-43f9-9265-059a825f6fee	\N	Cherry vine tomatoes	5.018	3508	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	48735462
-6e0f98ea-a510-434c-972c-d14e13cf0a61	\N	Closed punnet grapes	216.000	47520	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	47592794
-18c21710-cc26-43dd-81e3-0e5402b0dbfc	\N	Coconut	6.000	600	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	50214000
-562a5d26-47b7-4414-95f8-3cfa0fccbc6f	\N	Courgettes	129.730	49297	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590114
-904ef36b-b5fa-411b-af45-1b4e45af3785	\N	Cress	56.000	2464	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590117
-c957ee72-58a8-48a8-b761-47f8efa1896a	\N	Cucumber	1187.000	81903	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590118
-9acabe77-5f2c-46b3-b839-75f34d1c900e	\N	Date box small	34.000	5066	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	51082442
-0e08cde5-4d19-4601-82a6-886f8df6d75f	\N	Dates Mejool box	27.000	13473	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	46691283
-f07b5dac-1a44-4131-9007-c19b55283a5a	\N	Eggs Tray LARGE	91.000	71890	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4580448
-d95a30d2-ccba-4b09-a7a0-df0bdf73d6fb	\N	Fine Beans	36.000	6084	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590164
 d1a0b157-277e-4192-a09e-74fc738af290	\N	Flat Peach 4 for £1	4.000	400	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	46128692
 2cd17601-4b8c-4b88-9a5d-7822a30501ca	\N	Fruit Shoot	5.000	250	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	51069422
 6dcd746a-2331-4334-9aa8-ee3d6200ed50	\N	Fruit Shoot 3 for £1	22.000	2200	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	51069425
-69a57187-2019-4e5f-aa4a-a446f2774a5c	\N	Garlic Bulb Large	41.000	3157	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	50336822
 14199e67-c9c1-473b-8f2a-d410c553dc00	\N	Garlic Bulb Small	34.000	1870	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590122
-f9ec87c1-f4a5-4f0d-a961-fb722b580572	\N	Garlic Pre-pack	36.000	8640	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	46152000
-d98c9554-c25f-454a-8198-b087b6586a8b	\N	Ginger	0.316	190	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	45702909
-02b50570-86d0-4154-acac-e63969ce6c63	\N	Grapefruit Red	65.000	4485	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4577783
 a32983e1-e931-436a-be0b-317d18a36fd3	\N	Jackfruit	1.000	100	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	51130669
-3ab761c0-dc35-4e75-8717-ac102798d1f5	\N	Kiwi	187.000	8415	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4577795
-884ff54f-90c8-47d6-a0f0-ef9b805ffd77	\N	Kiwi Punnet	1.000	299	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	46998788
-768241a9-2915-4408-bba9-139872679e60	\N	Kohlrabi	49.694	20871	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	46030632
-ca99988f-3535-45d3-8d5e-ec3763c2598e	\N	Large Pomegranate	133.000	19950	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	51444342
-7f0568c6-573b-46bf-b1ab-bca5530309ef	\N	Leeks	46.006	14722	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590125
-1b756fe8-cff0-4480-9820-f7536fec15bc	\N	Lemons	206.000	8240	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4577796
-0f887bc1-8c2e-444d-a922-65344e1da629	\N	Lettuce Iceberg	26.000	2990	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590128
-a39b5c96-e36a-4117-b114-2e09107fb1d5	\N	Lettuce Romaine / Kos	46.000	7360	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	14774910
-db19f4ff-766b-4ec3-99f0-b59c02f7f231	\N	Lime	12.000	516	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	9764517
 bc593c2e-8c2f-40a5-be67-4ba069832da7	\N	Loose Nec/Peach	12.000	540	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	46059428
 a5b157f4-9a0a-410f-8895-6cacfce42509	\N	Mango	31.000	3100	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	49396924
-6adc9202-ed40-4062-9fae-a67c9b85c5ad	\N	Mango	49.000	7350	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	19997644
-1fa0481c-8019-4b42-8ca9-bed45e93d3de	\N	Melon Canteloupe	11.000	2200	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4580418
-429398db-37e8-477d-bd67-6f79178379e9	\N	Melon Galia	15.000	3750	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4580415
-52314e6b-4465-4ad8-a9b2-9ae72b192bc2	\N	Melon Honeydew	44.000	12320	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	7516789
-a7666979-e8cd-4b55-a701-23371001707f	\N	Melon Piel Desapo	7.000	1750	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4580417
-56065351-54b7-477e-9570-f2a5d360d294	\N	Milk	681.000	101469	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4592058
-85c5580e-a6af-457b-901a-93a1fd40416d	\N	Miniature potatoes 2.5kg	50.000	24950	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	48242178
-cb940406-3af3-4a14-bd52-a6ae28463e68	\N	Mushroom	25.068	11481	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590129
-6ca9dfff-2fb3-4ee3-88dc-b18603af89b7	\N	Mushroom Punnet	191.000	23875	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	46578422
 8511414e-603f-45bd-9da9-2ae5c410a594	\N	Nectarine Loose	13.000	585	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	49372420
-59acc899-047c-4852-81c5-b636220a5893	\N	Nectarine Punnet	118.000	28320	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	46073190
-c6c8f1ff-b885-46bc-b1c4-e03e8a4696b7	\N	Onion Red	22.192	2996	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590131
-51562c2b-bead-45c7-87bd-c73a0cb26719	\N	Onions	304.546	41114	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590130
-618316fa-a09a-4272-a7c7-b87ecac0d6a3	\N	Onions SPANISH	208.739	37573	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	45126940
-edc75c25-be2d-4b8a-84c1-34a800e5502f	\N	Orange Large	167.000	11523	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4580428
-ad830097-de34-4fbb-a7fc-1bc41b8e3af7	\N	Orange Small	152.000	4408	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4580429
-05a4fe36-e965-479f-a1d6-a31ae3140dd5	\N	Papaya	4.000	1196	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	47744198
-060f019b-2530-4f35-a762-db7e818133d2	\N	Parsnip	25.960	7269	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590132
-f2893367-4f66-4161-bfd3-ffd5c83104aa	\N	Passion Fruit	3.000	117	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4580431
-f44f3798-b325-4b1a-a6e3-e3dd46ae9697	\N	Passion Fruit 3 for £1	169.000	16900	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	46682933
-6e72304d-578a-4ebc-9b87-207e4727b6b6	\N	Pear Conference Punnet	61.000	17080	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	46627206
-fbe652f1-f570-4723-928b-aaf956566614	\N	Pears Conference	71.932	21508	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4580434
-2f32f9d2-f79d-44fa-8320-ff9cd3ae3391	\N	Peas on the pod	23.808	16666	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	48138712
-98b0b1bb-cf6b-4c8c-87cc-5fc674dd5210	\N	Peppers Mixed Pack	32.000	7648	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	46085511
-138ab18c-fa0a-4258-a07f-b3d8a67fee18	\N	Peppers Red	141.074	64122	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590139
-8aa67a90-7584-4b77-898d-67a76a5978da	\N	Peppers Yellow	17.552	7963	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590141
-084d86e7-a2a3-441b-af3e-eea989dd960b	\N	Physallis Punnet	15.000	2535	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4580437
-3855802e-784a-43ed-ae5e-dee589167dc4	\N	Pineapple Large	51.000	12189	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4580438
-9ce1a9f4-1c12-48b2-8a91-5004e4264da3	\N	Plum Red Loose	28.708	10335	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4580440
 80ff5776-71bb-418d-bd8a-460c5b53f577	\N	Pomegranate	6.000	600	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	49502560
-973abef4-dea0-4e8e-8c6f-b4afee55eca6	\N	Potato 2kg Bag	475.000	79050	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590146
-c7fa47b4-4eff-4ff0-b3b1-aa9c56f3d4ae	\N	Potato Loose	32.511	3901	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	46077562
-c07f2dcd-061d-409c-b0a3-aaab1cb3ff23	\N	Potatoes Baby Roast	83.042	18684	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590143
-0a900898-b6f4-4fba-9632-aba5b1569035	\N	Pre Pack Apple	62.000	12338	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	19247718
 bba3fdb7-856a-4513-b2a9-33b1f847d63f	\N	Prune Tub	14.000	4186	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	51657149
-c070816d-2aba-4c67-9ab9-9e0d75c41406	\N	Punnet Plum	3.000	300	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	47399643
 b44e3865-5fd8-4cfa-a078-5f065de6a5d8	\N	Radish bunch	2.000	500	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	51967479
-117f3551-dfaa-4212-a5b2-096da2925208	\N	Radish Pack	13.000	858	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590150
-7a348322-20df-4587-bb83-fe2b9a5a802c	\N	Red/Green chili peppers	36.000	720	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	45598704
-79a7f4cc-69c7-40fe-bbf8-5299b765db9d	\N	Roasted Almonds	4.000	600	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	50153533
-1c6be039-74a7-4705-83a4-37a4787b0130	\N	Roasted Pistachios	10.000	1500	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	50153547
-3ab31228-ed5d-4e9d-b700-04c6a0cce111	\N	Shallots	1.000	40	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	46301462
-1a19cb0a-c91a-46bd-9106-5290cd7ad69c	\N	Star Fruit	6.000	300	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	50207600
-4093f1bb-548d-4827-8d6d-99c696ea2777	\N	Strawberry Punnet	19.000	1900	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4580443
-5c0ad4bc-4f95-4e69-924e-93b3939745a5	\N	Sugar Snaps	38.000	6422	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590168
-e3a18e7a-24f5-47c4-bd7c-a2706520889b	\N	Swede	20.030	3205	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590152
-fa6aaa70-f6ed-4fcb-801b-f7aef3fcd878	\N	Sweet Potato	146.050	43669	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590154
-62a51600-7742-466d-b0ff-7e019f6d9db9	\N	Tamarind	3.000	897	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	14068110
-c9b5661c-c962-43b3-8e87-366c226d0494	\N	Tangerine PUNNET	61.000	21350	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	47330567
-9d70bd10-1230-4e3c-910e-25083715138e	\N	Tangerine Loose	79.696	26300	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4580444
-1e20ef85-34d5-407a-aa32-386697929136	\N	Tomato Cherry Punnet	285.000	34200	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590159
-5d674b1d-9c59-4370-8564-985ba7a636e4	\N	Tomato Loose/Vine	66.904	32114	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590157
-f1045132-fe2e-4bb3-b5a7-3fc75cf3a6b6	\N	Water Bottles - 24	69.000	33120	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	50246432
-23d4f957-93a7-4038-a1dc-907ca33eba7a	\N	Water Bottle 500ml	36.000	900	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	50342025
-b142c41a-441c-4f64-9fd1-be62b308fb30	\N	Watermelon	5.000	1750	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	48921831
-2a6b1f74-3681-4a5c-88d1-850c38d27444	\N	Papaya	4.000	1596	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	4580430
 93c62ef2-0e85-4f93-8bb1-50e0c8c6c1e6	\N	7.5 KG Potato	22.000	9900	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	49766771
 daf66beb-2ed1-442c-ab36-41ed4153545a	55b6a02c-33a1-4f36-b857-abff74aff428	Apple Cooking	12.244	4065	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	48180213
 e19fae3d-9164-447b-b1c0-3c0022341a5a	\N	Apple Coxes	1.600	478	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	52210598
@@ -11641,17 +11593,18 @@ fcbb29a8-c576-43f3-a2c2-6b84195e3003	7877beaf-2858-462d-aa1e-a784f1407fea	Beetro
 29fc1033-775f-4d4a-9997-c77502b50b9f	a3f6f2fd-4f93-43f4-bd8f-61b13beca826	Blueberry	20.000	3980	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	47891356
 937d9afe-602e-40d9-957b-6c11400fe0a0	\N	box tomato	1.000	1200	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	-39108
 349acec2-a179-45ff-aace-23e31367bb5c	31b54cad-4d38-4cb1-b9d6-091deacd53b3	Butternut Squash	45.854	11922	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	46020023
-173eb693-3b0a-474c-a486-9727583823d2	\N	button mushroom tub	13.000	585	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	52184056
 87dbc793-f7b9-4551-a516-5aa0df17aeb9	31a26376-6be8-499d-81cc-fac9e140bc11	Cabbage Red	3.266	621	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	4590102
 a11e9948-3086-4e1c-afd2-efe66d9e54cc	5c925564-a9c0-4a84-badc-b44ec82c2c4b	Cabbage White	44.774	4477	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	4590101
 66a31a95-feac-47e5-a6df-164ae4687991	69e73158-0fa9-4af1-8d95-b90122512e1d	Carrots	243.276	30410	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	4590103
+f44f3798-b325-4b1a-a6e3-e3dd46ae9697	2eb8b8b5-a035-41d3-9fa3-a62c54bb34f5	Passion Fruit 3 for £1	169.000	16900	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	46682933
+7a348322-20df-4587-bb83-fe2b9a5a802c	75bf9c8c-83a4-4132-b95d-7cbcd042ce9c	Red/Green chili peppers	36.000	720	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	45598704
+f1045132-fe2e-4bb3-b5a7-3fc75cf3a6b6	992069e0-8b07-402c-9fe7-ab747972c640	Water Bottles - 24	69.000	33120	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	50246432
+2a6b1f74-3681-4a5c-88d1-850c38d27444	fcedb9db-6631-48cb-b785-0ae38d9b4cf9	Papaya	4.000	1596	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	4580430
 4ef8f47a-9c54-4b36-b35d-cf060165a4d7	d19e1db9-6c21-42c2-bbb2-f72d3a595d07	Celeriac	16.644	4977	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	4590108
 c74ffb4a-a869-459a-8234-f8e23de39107	08e3bfd2-b87c-4a1b-8229-8a93b3febbe9	Celery	40.000	4800	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	4590110
 cdaab761-b1b4-44a0-9708-b1cc08195b52	\N	cherries	31.000	3100	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	52212461
 241415f9-4a39-4405-b6fe-22d7ac39fd00	\N	cherry	1.000	200	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	-39108
-334e0f66-90b3-4add-a395-516fe90f3795	\N	cherry tomato tub	25.000	2500	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	52217185
 0d1f4e7a-72bc-4317-a9c0-1743709a99f0	50e18db9-c0bc-4df2-8ebb-f6bdf1f979ef	Cherry vine tomatoes	4.680	3271	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	48735462
-2b70ac44-9f97-405e-9c64-be62275191be	\N	chinese leaf	4.000	547	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	52183545
 9a4da6ad-c73e-4d92-ba4f-5313a392d10f	df8d618e-d7da-4755-b47c-b89217b80d50	Closed punnet grapes	132.000	29634	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	47592794
 f36b989c-cc3f-4c1a-bff8-1b120d1ace1b	22a52ab2-4b4e-4eb9-a9a2-1affb2cae806	Coconut	4.000	400	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	50214000
 e08ef945-4a96-4beb-bba9-edef7541cfd9	e4be8932-840d-4a2f-81dd-340f834cfc6c	Courgettes	86.402	32833	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	4590114
@@ -11678,7 +11631,6 @@ a5e31914-b961-411c-83e7-9ea23de6f614	e2838162-83b6-41d9-85c2-d04f4f445967	Lemons
 9cac6b28-ba51-4f0e-a1ff-6632e918ca86	b7ccbf69-3654-4bad-8e34-66c0057dd8c9	Lettuce Romaine / Kos	36.000	5760	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	14774910
 779951d3-66a6-4dc9-965e-ef4064c3b463	\N	Loose Nec/Peach	72.000	3240	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	46059428
 341dfce4-edc1-4abf-a335-a4742f31ac5c	78b3d11d-2c16-48c3-ae2f-187588e89c28	Lychees 5 for £1	66.000	6600	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	46181620
-5f4cef50-64d2-482d-821c-3e570b18841e	\N	mango	14.000	1400	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	52183532
 b1fe1dac-bc28-45d2-b1b9-21ac01241443	35fac0b9-1ae9-4f97-b8eb-089b10f07ca4	Mango	118.000	17700	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	19997644
 84b909bf-8f23-4ea6-9a91-db924e0cf47d	a65e48ce-4a87-4a52-936f-42ce26691dae	Melon Canteloupe	12.000	3000	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	4580418
 4b6d42f8-70a7-42e6-a050-169963e54cf7	df530518-4266-4582-8c6b-964182a0a34c	Melon Galia	4.000	1000	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	4580415
@@ -11711,6 +11663,7 @@ a3a4e0ae-139d-49aa-8c03-a2c99cafcd40	\N	misc peach	17.000	2650	2026-06-01	epos_m
 3b04c960-1d3b-474e-97a7-b8099c49b15a	\N	misc peaches	5.000	650	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	-39108
 141b95c1-5901-4132-a047-6a760e0ea3c0	\N	misc peeled pots	1.000	1196	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	-39108
 1ce0f461-bba4-46c9-b679-0debfa8d7e59	\N	misc pine	2.000	100	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	-39108
+2b70ac44-9f97-405e-9c64-be62275191be	adcb81b3-6477-4595-8bef-0977eb5cc5c0	chinese leaf	4.000	547	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	52183545
 e482d88b-509f-434f-9ad3-4dcda55a0f47	\N	misc pineapple	3.000	200	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	-39108
 e2437eae-79f6-441d-9bd5-5014da3cb976	\N	misc pits	1.000	310	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	-39108
 edea1763-12b2-4199-aa89-2a0bb143b9b6	\N	misc plum	1.000	1100	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	-39108
@@ -11734,7 +11687,6 @@ ff461294-a636-49ca-83c4-473f98b8bc82	\N	Nectarine Loose	15.000	675	2026-06-01	ep
 3dd110ae-14cd-450f-adaf-dedcd8649712	c4097681-b488-46c6-9ecc-34fb2cbeb066	Orange Small	64.000	1856	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	4580429
 508b66bc-bf2c-43d7-bff1-6396a107f7a0	4706bab8-b903-448b-8581-368dbb07356a	Parsnip	14.480	4054	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	4590132
 851d3564-712a-43c1-904c-a7d09c4fb259	2eb8b8b5-a035-41d3-9fa3-a62c54bb34f5	Passion Fruit	1.000	39	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	4580431
-27afb048-4827-4e9e-b3fe-18464a81ab09	\N	Passion Fruit 3 for £1	76.000	7600	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	46682933
 b217b811-3644-4d37-abef-fa09055e96d2	\N	peach	2.000	300	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	-39108
 6d9ea0b6-0527-42ec-af3a-dab75ea295aa	1ed73c76-888b-42d0-a571-3a49fec5d926	Peach Punnet	2.000	500	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	4580433
 b9363cfd-0684-4971-b9a7-35a1792d25d1	8e0ee101-c2ec-45a7-b0da-d9693545e0cd	Pear Conference Punnet	33.000	9240	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	46627206
@@ -11773,32 +11725,62 @@ e0135417-bd6e-4123-9c23-296ec011de8a	3d4f1023-ca6a-413c-8018-384a605c4c42	Tanger
 392e9e0c-0930-46f1-9d22-4e4798cd6892	c414ebb1-1d91-46d8-afa3-3962b1d20cdb	Tomato Cherry Punnet	86.000	10320	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	4590159
 6fe5806d-a424-4b6e-8c14-859263e50494	f1ecc381-a61e-4c97-b231-b34133f7d69d	Tomato Loose/Vine	43.676	20964	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	4590157
 5bc5c8b5-2c63-4768-b02d-30106e9eec86	195ac8a7-948c-4e65-ba36-e18f018907ab	Water Bottle 500ml	17.000	425	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	50342025
-f1be4a4a-d7f0-4e78-a879-36cb3f73828e	\N	Water Bottles - 24	51.000	24480	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	50246432
-ba526304-3737-493d-ac09-ab15acd269b0	\N	Papaya	2.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	4580430
+f1be4a4a-d7f0-4e78-a879-36cb3f73828e	992069e0-8b07-402c-9fe7-ab747972c640	Water Bottles - 24	51.000	24480	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	50246432
 de98442a-cc1f-4f44-9cd5-321a1a9979ef	c65565e5-cdec-447c-9197-87dd8ea0576d	Watermelon 4s	18.000	10450	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	48921831
 a7faaff3-6f31-40d4-a943-47d485f99ae2	1c6cc1d4-7705-4692-8447-eeb815b9a4e1	watermelon 6s	28.000	11200	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	52173138
-25476100-336b-4a1e-a6f2-c7fc632de692	\N	watermelon small	27.000	10800	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	52207693
 317f6a42-4214-4422-96ee-4d4270266317	\N	7.5 KG Potato	1.000	0	2026-06-15	epos_export	2026-06-17 03:46:35.210124+00	49766771
 17d4b7aa-8cad-45d1-b150-d6e54d939bb6	\N	7.5 KG Potato	1.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	49766771
 d594825d-ff71-4396-8e59-c2e63408e1da	\N	7.5 KG Potato	3.000	0	2026-06-08	epos_export	2026-06-17 03:52:38.97098+00	49766771
+7bbe977b-34f1-4975-9848-f45d7e7c52da	20b47941-4381-4647-a9da-7a7506c93c33	Apples Braeburn	86.862	25972	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	2693455
+19f7819a-e318-41b8-9401-d50e8fb6a689	55b6a02c-33a1-4f36-b857-abff74aff428	Apple Cooking	13.832	4592	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	48180213
+1202f099-2e5b-49b1-9ef5-8458ad7ad6a6	aa4c8f1e-92d0-4948-b630-1f3c29488bb0	Apples Gala	52.606	15729	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	2693458
+52ca4078-af95-4dad-a5ef-d9267d5c2c7c	cf2816c9-a004-4a85-b2d5-82664d9ae837	Apples Golden	44.564	13325	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	2602093
+c3be6311-1c20-487d-96ee-21f3b6f053ab	6ca074f2-d330-4d85-8ac6-831c4b51d081	Apples Granny	27.312	8166	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4577778
+1f5f1eff-8e1a-49a6-9cfc-eff0fe379d58	db6af055-eda8-44ff-964d-c6aa60c27c9a	Apples Pink Lady	36.466	15790	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4577780
+1f34ad91-8852-404c-bf1a-3abb75427d9e	66d42090-178e-42d9-9af0-3bd45ecb6931	Apples Red Delicious	10.256	3067	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4577781
+1ce29c4f-bcb1-481e-a27f-6fd89f689fda	15e0259d-7e67-45dc-9c0f-fb77e7b20928	Apricot Loose	2.000	40	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	46128454
+37546a9b-6639-43f7-bf8c-873250224347	56f46a26-3c7e-41ce-ba00-dfbee7dcf626	Aubergine	66.578	25300	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590120
+edb26676-e6e5-49be-ad70-3f0cc9e005d7	8314af80-11a7-4d27-a9d1-ca00943886f5	Avocado	367.000	40003	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	2602077
+62638f7b-b69b-4a65-a25c-ec5aa251dba7	d85d0d21-166f-4fcb-967d-df877ee9b56a	Banana	205.572	36558	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4577782
+9d195d74-cd1f-4f86-b2a1-17a2355cc05c	32fb056f-746c-40aa-8350-cce4337ecc16	Bean Sprouts	2.000	178	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	45840215
+dace3e75-3d4b-4ce6-8b00-75a4430b67f8	7877beaf-2858-462d-aa1e-a784f1407fea	Beetroot Loose	14.270	2825	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	46621621
 66090d7a-bbcb-4448-8248-f5bda77e4cdf	\N	cherries	2.000	0	2026-06-15	epos_export	2026-06-17 03:46:35.210124+00	52212461
-ef41a82c-b72e-46bc-955c-23832070db32	\N	chinese leaf	1.000	0	2026-06-15	epos_export	2026-06-17 03:46:35.210124+00	52183545
+cce8bb16-4813-407a-bbbc-8e0232a402a2	a3f6f2fd-4f93-43f4-bd8f-61b13beca826	Blueberry	34.000	6766	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	47891356
+81453747-e04e-4c68-a421-1db5e37d46a5	31b54cad-4d38-4cb1-b9d6-091deacd53b3	Butternut Squash	52.877	13748	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	46020023
+9e308db5-b257-42f9-b671-fd3a09dd3951	31a26376-6be8-499d-81cc-fac9e140bc11	Cabbage Red	10.586	2011	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590102
 bf938137-8fd5-410c-afd9-b1ff91f2af53	\N	cherries	14.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	52212461
-84138e8f-c7b1-4a46-9c47-12a9d1319210	\N	cherry tomato tub	19.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	52217185
-aedd602e-6751-4d8a-be9e-2374385fe630	\N	chinese leaf	1.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	52183545
+47552627-a6ed-4c7f-abc8-012e4c1bf66d	5c925564-a9c0-4a84-badc-b44ec82c2c4b	Cabbage White	78.934	7893	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590101
+2842acfe-b2b9-4ee8-b9d5-6cf8f2898c3f	5635d13d-2ae8-49e4-b39b-fb330115cdae	Carrot Bag 1KG	118.000	16402	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	47064979
+9116c641-ddf8-4390-984b-103ca6325922	69e73158-0fa9-4af1-8d95-b90122512e1d	Carrots	300.388	37549	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590103
+ad97003d-a544-41b3-b36c-259ae104b6ea	d19e1db9-6c21-42c2-bbb2-f72d3a595d07	Celeriac	35.764	10693	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590108
+13be363e-02fd-4f9a-8a7a-b016f85cc63d	08e3bfd2-b87c-4a1b-8229-8a93b3febbe9	Celery	55.000	7470	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590110
+2299ba2e-7624-43f9-9265-059a825f6fee	50e18db9-c0bc-4df2-8ebb-f6bdf1f979ef	Cherry vine tomatoes	5.018	3508	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	48735462
+6e0f98ea-a510-434c-972c-d14e13cf0a61	df8d618e-d7da-4755-b47c-b89217b80d50	Closed punnet grapes	216.000	47520	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	47592794
 2a5be6d3-147a-4375-84d8-0d6bccb1ecb7	\N	large nectarine	5.000	0	2026-06-15	epos_export	2026-06-17 03:46:35.210124+00	52208240
+18c21710-cc26-43dd-81e3-0e5402b0dbfc	22a52ab2-4b4e-4eb9-a9a2-1affb2cae806	Coconut	6.000	600	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	50214000
 debb01cd-e337-499f-a41b-b6e1c844756d	\N	garlic	1.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	-39108
+562a5d26-47b7-4414-95f8-3cfa0fccbc6f	e4be8932-840d-4a2f-81dd-340f834cfc6c	Courgettes	129.730	49297	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590114
+904ef36b-b5fa-411b-af45-1b4e45af3785	37b38db2-5697-4dae-8200-f292bcd2032c	Cress	56.000	2464	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590117
+c957ee72-58a8-48a8-b761-47f8efa1896a	2af52c0b-c9cd-4b96-bed0-744a8240032c	Cucumber	1187.000	81903	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590118
 28dae67d-2cad-4c7b-96d7-52c6c41f78f5	\N	Loose Nec/Peach	10.000	0	2026-06-15	epos_export	2026-06-17 03:46:35.210124+00	46059428
+9acabe77-5f2c-46b3-b839-75f34d1c900e	21a4c8f2-17a0-4a25-a2c7-c8e01ffd0b92	Date box small	34.000	5066	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	51082442
+0e08cde5-4d19-4601-82a6-886f8df6d75f	c899cad1-dc28-4ef2-bcad-63203d5f9743	Dates Mejool box	27.000	13473	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	46691283
 6f8f9770-2d4c-4d8f-b1a2-48e802c3e54d	\N	large nectarine	12.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	52208240
+f07b5dac-1a44-4131-9007-c19b55283a5a	fe4be91f-7b90-4427-ae30-a2ed47a831ea	Eggs Tray LARGE	91.000	71890	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4580448
+d95a30d2-ccba-4b09-a7a0-df0bdf73d6fb	75051582-5d94-4382-98c9-072385112013	Fine Beans	36.000	6084	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590164
 1e20191b-a605-4e5b-8736-11193bf9a000	\N	misc banana	1.000	0	2026-06-15	epos_export	2026-06-17 03:46:35.210124+00	-39108
 e1cfaa30-3f0e-4117-b3e0-649d36ec362c	\N	misc pach	1.000	0	2026-06-15	epos_export	2026-06-17 03:46:35.210124+00	-39108
 0f12f812-49e9-476f-9c4a-e55dcca5657f	\N	misc passion	1.000	0	2026-06-15	epos_export	2026-06-17 03:46:35.210124+00	-39108
 589566e3-d422-4a15-bb3c-7b99f0c7db4d	\N	misc peach	2.000	0	2026-06-15	epos_export	2026-06-17 03:46:35.210124+00	-39108
 573d8ed6-189a-4c5f-bc77-051e16e8422c	\N	misc pots	1.000	0	2026-06-15	epos_export	2026-06-17 03:46:35.210124+00	-39108
+69a57187-2019-4e5f-aa4a-a446f2774a5c	bf3ad912-d591-498a-acf9-fb98f30fb4f5	Garlic Bulb Large	41.000	3157	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	50336822
+f9ec87c1-f4a5-4f0d-a961-fb722b580572	b90e4e16-a6df-4f8a-a99a-c36420942e9a	Garlic Pre-pack	36.000	8640	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	46152000
+84138e8f-c7b1-4a46-9c47-12a9d1319210	c414ebb1-1d91-46d8-afa3-3962b1d20cdb	cherry tomato tub	19.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	52217185
 b12af6f4-d1f5-4fe3-a2d3-be4e7418c370	\N	Nectarine Punnet 1kg LARGE	19.000	0	2026-06-15	epos_export	2026-06-17 03:46:35.210124+00	48855798
 7688f215-bb90-4ce7-ba1a-f6803e0ff889	\N	Loose Nec/Peach	4.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	46059428
 209bf882-22ea-43af-a61b-4422fe6a1229	\N	Loose Nec/Peach	12.000	0	2026-06-08	epos_export	2026-06-17 03:52:38.97098+00	46059428
-592452ff-4220-49bd-afb2-ca179dc558be	\N	mango	1.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	52183532
+ef41a82c-b72e-46bc-955c-23832070db32	adcb81b3-6477-4595-8bef-0977eb5cc5c0	chinese leaf	1.000	0	2026-06-15	epos_export	2026-06-17 03:46:35.210124+00	52183545
+aedd602e-6751-4d8a-be9e-2374385fe630	adcb81b3-6477-4595-8bef-0977eb5cc5c0	chinese leaf	1.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	52183545
 ca77132b-4abb-4361-994e-c38c23f6a269	\N	misc ineapple	1.000	0	2026-06-08	epos_export	2026-06-17 03:52:38.97098+00	-39108
 40e69c31-3b25-4acc-b08e-adc49993c4b0	\N	misc	1.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	-39108
 c7c773a4-6278-45de-9ea9-91f082641bc2	\N	misc  cherrytoms	1.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	-39108
@@ -11816,9 +11798,9 @@ ad2fc60c-edd9-44e1-bdec-86e2efbc9136	\N	misc pine	2.000	0	2026-06-08	epos_export
 49b0ee52-7e31-4f23-927f-f6a034cea464	\N	sweet pepper	4.000	0	2026-06-15	epos_export	2026-06-17 03:46:35.210124+00	52176350
 d1ce3883-544e-4933-9394-11e2b99137e8	\N	misc pineapple	3.000	0	2026-06-08	epos_export	2026-06-17 03:52:38.97098+00	-39108
 49a087f8-9434-402d-a640-3d1c1343770a	\N	misc veg	1.000	0	2026-06-08	epos_export	2026-06-17 03:52:38.97098+00	-39108
+d98c9554-c25f-454a-8198-b087b6586a8b	b731c695-eda5-4474-9546-c81e448aed03	Ginger	0.316	190	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	45702909
+02b50570-86d0-4154-acac-e63969ce6c63	fd90e857-5390-4736-94ef-745d72d9e86f	Grapefruit Red	65.000	4485	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4577783
 b73c1f34-2969-494a-85b8-b235a4dd2eda	\N	veg	1.000	0	2026-06-15	epos_export	2026-06-17 03:46:35.210124+00	-39108
-0629db2e-cfda-45c8-a530-b5cc426cb0cb	\N	Water Bottles - 24	6.000	0	2026-06-15	epos_export	2026-06-17 03:46:35.210124+00	50246432
-9eb40963-e234-428b-8d99-ede7b649757e	\N	watermelon small	2.000	0	2026-06-15	epos_export	2026-06-17 03:46:35.210124+00	52207693
 a208ebe5-db43-4cd3-81fa-295f46396886	c414ebb1-1d91-46d8-afa3-3962b1d20cdb	Tomato Cherry Punnet	9.000	0	2026-06-15	epos_export	2026-06-17 03:46:35.210124+00	4590159
 eed44ccb-15a9-4577-baf7-7c897d6a3204	e2838162-83b6-41d9-85c2-d04f4f445967	Lemons	9.000	0	2026-06-15	epos_export	2026-06-17 03:46:35.210124+00	4577796
 7499475d-01f2-4f65-8035-45f736cc3238	fe4be91f-7b90-4427-ae30-a2ed47a831ea	Eggs Tray LARGE	2.000	0	2026-06-15	epos_export	2026-06-17 03:46:35.210124+00	4580448
@@ -11874,6 +11856,7 @@ c4428636-362f-4941-bc40-7e4034ec6a5a	aa4c8f1e-92d0-4948-b630-1f3c29488bb0	Apples
 bff09d64-8fc5-4644-a0a7-322010026538	b7ccbf69-3654-4bad-8e34-66c0057dd8c9	Lettuce Romaine / Kos	5.000	0	2026-06-15	epos_export	2026-06-17 03:46:35.210124+00	14774910
 4e6fe4da-41f2-40ae-8080-8b025255152b	db6af055-eda8-44ff-964d-c6aa60c27c9a	Apples Pink Lady	2.000	0	2026-06-15	epos_export	2026-06-17 03:46:35.210124+00	4577780
 2c72c7e0-851e-4db3-8c9e-5a3600069418	e29d7739-a29f-48bd-bc07-3d6e7794f828	Pineapple Large	2.000	0	2026-06-15	epos_export	2026-06-17 03:46:35.210124+00	4580438
+0629db2e-cfda-45c8-a530-b5cc426cb0cb	992069e0-8b07-402c-9fe7-ab747972c640	Water Bottles - 24	6.000	0	2026-06-15	epos_export	2026-06-17 03:46:35.210124+00	50246432
 2bd4badc-700a-4ede-bb5b-a0a6fe2c096b	14e6deff-e2c6-4cc2-a7f3-9239b079260e	Onions	14.000	0	2026-06-15	epos_export	2026-06-17 03:46:35.210124+00	4590130
 44029c93-e092-43d8-ae10-9c24eebb0bdd	6f859222-21e6-4a42-b7a6-ab42e914d07a	Onion Red	3.000	0	2026-06-15	epos_export	2026-06-17 03:46:35.210124+00	4590131
 58ad105b-0b0b-4ba3-91a5-c68f710c63ca	e8bfae4c-a7a3-4555-850b-b7f2cca1b619	Miniature Salad Potatoes 2.5kg	4.000	0	2026-06-15	epos_export	2026-06-17 03:46:35.210124+00	48242178
@@ -11884,25 +11867,41 @@ c3d2cc13-eef3-4da3-9e33-e62c22a6aad3	c4097681-b488-46c6-9ecc-34fb2cbeb066	Orange
 39e820a8-b28e-459f-9c58-86c49c0a77fc	4706bab8-b903-448b-8581-368dbb07356a	Parsnip	2.000	0	2026-06-15	epos_export	2026-06-17 03:46:35.210124+00	4590132
 e5841b0c-39a5-4bf4-a73a-66b251b26b4c	ed592873-f7ad-4486-b10e-fbfc3205aa01	Lettuce Iceberg	2.000	0	2026-06-15	epos_export	2026-06-17 03:46:35.210124+00	4590128
 189f8454-0a22-47c4-a66c-4bac811f1225	\N	7.5 KG Potato	1.000	0	2026-06-16	epos_export	2026-06-17 03:48:41.501981+00	49766771
+3ab761c0-dc35-4e75-8717-ac102798d1f5	9aaf97d9-8de5-4077-954d-e649f084c29b	Kiwi	187.000	8415	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4577795
 41e15abe-fd34-4caa-947a-919d59985f18	\N	Apple Coxes	1.000	0	2026-06-16	epos_export	2026-06-17 03:48:41.501981+00	52210598
 05f21951-0967-4ad8-9e34-6cf1d985ce58	\N	Nectarine Loose	2.000	0	2026-06-08	epos_export	2026-06-17 03:52:38.97098+00	49372420
-3831b243-d997-4f3b-8520-e9da3707cd26	\N	Passion Fruit 3 for £1	14.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	46682933
+884ff54f-90c8-47d6-a0f0-ef9b805ffd77	129f301b-2406-4003-8668-584f515779ee	Kiwi Punnet	1.000	299	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	46998788
 b1c61935-7591-4574-b702-f3bff4603e3e	\N	Nectarine Punnet 1kg LARGE	2.000	0	2026-06-08	epos_export	2026-06-17 03:52:38.97098+00	48855798
+768241a9-2915-4408-bba9-139872679e60	2909b1af-bfcf-45cb-80ed-c197d2a8e80f	Kohlrabi	49.694	20871	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	46030632
 536ded07-2404-4d31-9a00-fefca4c2d1bf	\N	peeled pots	1.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	-39108
+ca99988f-3535-45d3-8d5e-ec3763c2598e	b3b40799-e152-443b-b65e-21c530579670	Large Pomegranate	133.000	19950	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	51444342
+7f0568c6-573b-46bf-b1ab-bca5530309ef	cfac4e49-5427-4bf0-aa4f-64a137e49d23	Leeks	46.006	14722	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590125
+1b756fe8-cff0-4480-9820-f7536fec15bc	e2838162-83b6-41d9-85c2-d04f4f445967	Lemons	206.000	8240	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4577796
+0f887bc1-8c2e-444d-a922-65344e1da629	ed592873-f7ad-4486-b10e-fbfc3205aa01	Lettuce Iceberg	26.000	2990	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590128
+a39b5c96-e36a-4117-b114-2e09107fb1d5	b7ccbf69-3654-4bad-8e34-66c0057dd8c9	Lettuce Romaine / Kos	46.000	7360	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	14774910
 cbadffc3-f5f7-4a5a-a67f-868c9992b171	\N	pink lady tub	4.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	52173822
-6c43b34e-dfc3-4229-ab21-ccefb103c00b	\N	Passion Fruit 3 for £1	1.000	0	2026-06-08	epos_export	2026-06-17 03:52:38.97098+00	46682933
-492233e0-a7e7-44c7-a700-0987a9ad51cc	\N	chinese leaf	1.000	0	2026-06-16	epos_export	2026-06-17 03:48:41.501981+00	52183545
+db19f4ff-766b-4ec3-99f0-b59c02f7f231	be2293d5-4a16-4ca6-a40a-294c26a4ae85	Lime	12.000	516	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	9764517
+6adc9202-ed40-4062-9fae-a67c9b85c5ad	35fac0b9-1ae9-4f97-b8eb-089b10f07ca4	Mango	49.000	7350	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	19997644
+1fa0481c-8019-4b42-8ca9-bed45e93d3de	a65e48ce-4a87-4a52-936f-42ce26691dae	Melon Canteloupe	11.000	2200	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4580418
+429398db-37e8-477d-bd67-6f79178379e9	df530518-4266-4582-8c6b-964182a0a34c	Melon Galia	15.000	3750	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4580415
 58095c69-8445-4a4c-bce2-44db37fd37fd	\N	Prune Tub	5.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	51657149
+52314e6b-4465-4ad8-a9b2-9ae72b192bc2	ed61eae5-7212-4ab0-8b27-a0a267e3936b	Melon Honeydew	44.000	12320	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	7516789
 70252054-a522-4643-b78b-e06a411b672f	\N	Fruit Shoot 3 for £1	4.000	0	2026-06-16	epos_export	2026-06-17 03:48:41.501981+00	51069425
+a7666979-e8cd-4b55-a701-23371001707f	51a7e9ba-f37b-4fff-8a54-78e664466bb9	Melon Piel Desapo	7.000	1750	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4580417
 9ffff947-bb5a-45ca-8cf6-9f8cc3726b27	\N	pineapple	1.000	0	2026-06-08	epos_export	2026-06-17 03:52:38.97098+00	-39108
 acd415c5-bec0-478c-af7e-4166db5f2fb9	\N	small nectarine	32.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	52194764
 35a6d411-d8a6-4c77-9278-c7619812fd3e	\N	strawberry punnet	4.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	52211840
 18d75a25-9d43-445f-9cf7-3e9ae40505eb	\N	large nectarine	3.000	0	2026-06-16	epos_export	2026-06-17 03:48:41.501981+00	52208240
+56065351-54b7-477e-9570-f2a5d360d294	ff4eb8e2-7fe3-4c1b-8b59-24d502b8c4c8	Milk	681.000	101469	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4592058
 eff6953f-4952-4cdd-8183-6f88852f4c3a	\N	pink lady tub	5.000	0	2026-06-08	epos_export	2026-06-17 03:52:38.97098+00	52173822
 8af66d41-2597-4c66-9720-12fbaf454212	\N	sweet pepper	3.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	52176350
+85c5580e-a6af-457b-901a-93a1fd40416d	e8bfae4c-a7a3-4555-850b-b7f2cca1b619	Miniature potatoes 2.5kg	50.000	24950	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	48242178
+cb940406-3af3-4a14-bd52-a6ae28463e68	5d5fd9f2-5232-4eb5-9c12-7e6d58058849	Mushroom	25.068	11481	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590129
+6ca9dfff-2fb3-4ee3-88dc-b18603af89b7	e670399d-e9f6-45c6-a04c-d1f242c8c4f0	Mushroom Punnet	191.000	23875	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	46578422
 83446604-d3a2-4a02-8537-f1dd2d2007ee	\N	Loose Nec/Peach	5.000	0	2026-06-16	epos_export	2026-06-17 03:48:41.501981+00	46059428
-d3247f50-0f84-4df5-9d6e-2447723cc86e	\N	Water Bottles - 24	6.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	50246432
-3462c61d-2948-4123-9ce0-96fb72905bc9	\N	watermelon small	12.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	52207693
+3831b243-d997-4f3b-8520-e9da3707cd26	2eb8b8b5-a035-41d3-9fa3-a62c54bb34f5	Passion Fruit 3 for £1	14.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	46682933
+492233e0-a7e7-44c7-a700-0987a9ad51cc	adcb81b3-6477-4595-8bef-0977eb5cc5c0	chinese leaf	1.000	0	2026-06-16	epos_export	2026-06-17 03:48:41.501981+00	52183545
+d3247f50-0f84-4df5-9d6e-2447723cc86e	992069e0-8b07-402c-9fe7-ab747972c640	Water Bottles - 24	6.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	50246432
 1f06b57d-db28-4619-89e3-c877c72631b8	c414ebb1-1d91-46d8-afa3-3962b1d20cdb	Tomato Cherry Punnet	11.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	4590159
 2744b256-5d53-44bf-9573-632548a5909f	\N	misc	3.000	0	2026-06-16	epos_export	2026-06-17 03:48:41.501981+00	-39108
 da891465-58b8-40ce-8930-ece8fc57c1b3	\N	misc berry	1.000	0	2026-06-16	epos_export	2026-06-17 03:48:41.501981+00	-39108
@@ -11940,7 +11939,6 @@ ee7dd878-9571-48c7-afef-fcd896478c8b	8be94809-6c19-4f8e-b797-fe83416f4458	Potato
 2ce44686-939a-442c-858a-00d481999e96	298c882e-26db-4c5c-bc08-40035214a9e1	Peppers Yellow	3.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	4590141
 0256be24-da5b-4830-867d-b6016a5a5e4c	e3e632c9-89f5-4e03-8b3d-010b6b9baf5c	Peppers Red	23.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	4590139
 049d4152-5057-482b-aea9-d27a5dd0e8d4	be162566-2631-4c69-98cb-a003a193a8de	Pears Conference	8.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	4580434
-9afb549b-38df-4499-9c6e-0943ed1247fa	\N	Water Bottles - 24	3.000	0	2026-06-16	epos_export	2026-06-17 03:48:41.501981+00	50246432
 5ceb1f50-982c-4e5e-8b44-920b0e2ac69e	c414ebb1-1d91-46d8-afa3-3962b1d20cdb	Tomato Cherry Punnet	12.000	0	2026-06-16	epos_export	2026-06-17 03:48:41.501981+00	4590159
 5747eda8-97d9-4619-b15f-f12e9227ab97	e2838162-83b6-41d9-85c2-d04f4f445967	Lemons	3.000	0	2026-06-16	epos_export	2026-06-17 03:48:41.501981+00	4577796
 c90a1d5f-bb8a-4505-b456-358b70694ca9	fe4be91f-7b90-4427-ae30-a2ed47a831ea	Eggs Tray LARGE	4.000	0	2026-06-16	epos_export	2026-06-17 03:48:41.501981+00	4580448
@@ -12004,7 +12002,6 @@ aa5c560e-29a9-41c3-823e-e61234afec01	e8bfae4c-a7a3-4555-850b-b7f2cca1b619	Miniat
 8923fbbc-e3c3-4b01-b94d-d66b4915fad9	c4097681-b488-46c6-9ecc-34fb2cbeb066	Orange Small	6.000	0	2026-06-16	epos_export	2026-06-17 03:48:41.501981+00	4580429
 7954e128-538b-4ffc-b5bb-b2d83587dafe	4706bab8-b903-448b-8581-368dbb07356a	Parsnip	3.000	0	2026-06-16	epos_export	2026-06-17 03:48:41.501981+00	4590132
 27272725-2806-4fb1-9ce2-5b89a3e5a290	ed592873-f7ad-4486-b10e-fbfc3205aa01	Lettuce Iceberg	2.000	0	2026-06-16	epos_export	2026-06-17 03:48:41.501981+00	4590128
-04bed2fe-5b01-4a4c-9dea-024489e4d01d	\N	Papaya	1.000	0	2026-06-12	epos_export	2026-06-17 03:48:41.587399+00	4580430
 2fa03615-c175-4fd6-975b-cc4bdf3cc799	\N	7.5 KG Potato	1.000	0	2026-06-12	epos_export	2026-06-17 03:48:41.587399+00	49766771
 e474f11c-9bb2-4e15-af14-1ee3a6d9881b	66d42090-178e-42d9-9af0-3bd45ecb6931	Apples Red Delicious	2.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	4577781
 4c2716d6-466a-4c49-b7a5-7d9953dcc6e3	56f46a26-3c7e-41ce-ba00-dfbee7dcf626	Aubergine	16.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	4590120
@@ -12020,7 +12017,6 @@ ca6bf112-7225-45dd-bf58-f41d25c308b1	bf3ad912-d591-498a-acf9-fb98f30fb4f5	Garlic
 52657e6f-c187-442f-ba08-c4e60063cd63	2af52c0b-c9cd-4b96-bed0-744a8240032c	Cucumber	138.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	4590118
 a2572a0e-e749-4f6f-ac2e-254c55628af2	bf7fd091-e669-447a-930c-ced5b1d40399	Orange Large	6.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	4580428
 fdfc14cb-08b3-4bf8-bd7c-08fa78b578ee	\N	cherries	7.000	0	2026-06-12	epos_export	2026-06-17 03:48:41.587399+00	52212461
-e0ebfd2b-0429-4eef-93ce-0c2a0ec68aaf	\N	cherry tomato tub	6.000	0	2026-06-12	epos_export	2026-06-17 03:48:41.587399+00	52217185
 82735aa3-79f6-4e64-9c89-bef5fa374369	31a26376-6be8-499d-81cc-fac9e140bc11	Cabbage Red	1.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	4590102
 3583c0ab-b6fe-4217-8c63-26000661e059	5c925564-a9c0-4a84-badc-b44ec82c2c4b	Cabbage White	4.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	4590101
 9f7100c6-5fd7-4208-a367-6a7162ab7eac	ccf693c0-8893-4258-a09b-78eb3a4f51ca	Radish Pack	2.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	4590150
@@ -12057,7 +12053,7 @@ ef154037-6409-428b-aad5-7e7791a6800a	\N	misc soft fruit	1.000	0	2026-06-12	epos_
 0fdfe205-f8d6-4c83-bfbc-1618a1b04bb0	28ff7b46-5d20-4beb-9bd0-997eeb750500	Swede	1.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	4590152
 b92dd8ee-0f63-4a65-b3d0-9e1a87d03329	a65e48ce-4a87-4a52-936f-42ce26691dae	Melon Canteloupe	5.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	4580418
 e0478072-f83e-4f8e-8e88-4d3ab8c9b3f9	cd6a5b06-81e9-4703-8a08-baeb6a504439	Peppers Mixed Pack	7.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	46085511
-bf79e21a-8799-49d5-a014-2f3a5fab37b4	\N	Passion Fruit 3 for £1	8.000	0	2026-06-12	epos_export	2026-06-17 03:48:41.587399+00	46682933
+04bed2fe-5b01-4a4c-9dea-024489e4d01d	fcedb9db-6631-48cb-b785-0ae38d9b4cf9	Papaya	1.000	0	2026-06-12	epos_export	2026-06-17 03:48:41.587399+00	4580430
 39f2419b-eb2b-4b4a-b1f0-2c7c6652f24e	14e6deff-e2c6-4cc2-a7f3-9239b079260e	Onions	26.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	4590130
 3329065c-9100-48a4-ac17-96fb274d00e6	6f859222-21e6-4a42-b7a6-ab42e914d07a	Onion Red	7.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	4590131
 4e2c70ff-9520-450c-968b-312f0ae95f8c	e8bfae4c-a7a3-4555-850b-b7f2cca1b619	Miniature Salad Potatoes 2.5kg	5.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	48242178
@@ -12068,11 +12064,14 @@ aa17e29e-2236-483a-a780-151c4bdf40ce	\N	pink lady tub	3.000	0	2026-06-12	epos_ex
 88a377bc-849e-4f10-99d9-03022047bd65	c4097681-b488-46c6-9ecc-34fb2cbeb066	Orange Small	20.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	4580429
 b287e092-ce6e-4f7a-8e74-231d95e57b97	4706bab8-b903-448b-8581-368dbb07356a	Parsnip	9.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	4590132
 7f09b719-6195-4fbc-9af3-d165575bf2da	ed592873-f7ad-4486-b10e-fbfc3205aa01	Lettuce Iceberg	2.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	4590128
+59acc899-047c-4852-81c5-b636220a5893	ae1a3ca2-ed33-4c83-8b30-c3f2ef6895da	Nectarine Punnet	118.000	28320	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	46073190
 5fde907b-e7e5-4c24-8cae-abd5864b693b	\N	small nectarine	10.000	0	2026-06-12	epos_export	2026-06-17 03:48:41.587399+00	52194764
 24b9dd81-5edf-4efe-9539-ec82d9f2fd43	\N	small nectarine	21.000	0	2026-06-08	epos_export	2026-06-17 03:52:38.97098+00	52194764
-ad25c501-d1f8-47bc-a5dd-e1730aaefe93	\N	Passion Fruit 3 for £1	3.000	0	2026-06-10	epos_export	2026-06-17 03:50:39.918213+00	46682933
-b951237d-0a42-4554-b62b-30c7861c51ab	\N	Water Bottles - 24	2.000	0	2026-06-12	epos_export	2026-06-17 03:48:41.587399+00	50246432
-23c647c8-f3f3-449a-98c8-33865d8ce493	\N	watermelon small	5.000	0	2026-06-12	epos_export	2026-06-17 03:48:41.587399+00	52207693
+c6c8f1ff-b885-46bc-b1c4-e03e8a4696b7	6f859222-21e6-4a42-b7a6-ab42e914d07a	Onion Red	22.192	2996	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590131
+51562c2b-bead-45c7-87bd-c73a0cb26719	14e6deff-e2c6-4cc2-a7f3-9239b079260e	Onions	304.546	41114	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590130
+618316fa-a09a-4272-a7c7-b87ecac0d6a3	65db7885-df5d-4330-99d1-959c433f6fd5	Onions SPANISH	208.739	37573	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	45126940
+edc75c25-be2d-4b8a-84c1-34a800e5502f	bf7fd091-e669-447a-930c-ced5b1d40399	Orange Large	167.000	11523	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4580428
+ad25c501-d1f8-47bc-a5dd-e1730aaefe93	2eb8b8b5-a035-41d3-9fa3-a62c54bb34f5	Passion Fruit 3 for £1	3.000	0	2026-06-10	epos_export	2026-06-17 03:50:39.918213+00	46682933
 cf250e4b-79c3-49c2-a2f7-188bd8acfeb0	c414ebb1-1d91-46d8-afa3-3962b1d20cdb	Tomato Cherry Punnet	4.000	0	2026-06-12	epos_export	2026-06-17 03:48:41.587399+00	4590159
 ffb0b4a4-b06d-47bb-bfb5-d2b95a33090b	e2838162-83b6-41d9-85c2-d04f4f445967	Lemons	15.000	0	2026-06-12	epos_export	2026-06-17 03:48:41.587399+00	4577796
 8cc14cb6-dcbe-4c41-b16c-49fdba42612f	fe4be91f-7b90-4427-ae30-a2ed47a831ea	Eggs Tray LARGE	3.000	0	2026-06-12	epos_export	2026-06-17 03:48:41.587399+00	4580448
@@ -12120,6 +12119,7 @@ dbf501ba-cf09-4c66-aa70-6e7b33ab2fde	78b3d11d-2c16-48c3-ae2f-187588e89c28	Lychee
 90164f49-22ec-425c-a1ab-c151cf92dd61	70a4c00e-9871-4f4f-9af2-3c0a43b165ef	Tamarind	2.000	0	2026-06-12	epos_export	2026-06-17 03:48:41.587399+00	14068110
 1ab51370-d23f-48b6-858e-ff6def77b515	cf2816c9-a004-4a85-b2d5-82664d9ae837	Apples Golden	1.000	0	2026-06-12	epos_export	2026-06-17 03:48:41.587399+00	2602093
 b7a711de-e8fe-4b8b-89d5-909ba18b48a3	65db7885-df5d-4330-99d1-959c433f6fd5	Onions SPANISH	7.000	0	2026-06-12	epos_export	2026-06-17 03:48:41.587399+00	45126940
+b951237d-0a42-4554-b62b-30c7861c51ab	992069e0-8b07-402c-9fe7-ab747972c640	Water Bottles - 24	2.000	0	2026-06-12	epos_export	2026-06-17 03:48:41.587399+00	50246432
 beb3c503-6c82-457f-a696-76b69845fa70	db6af055-eda8-44ff-964d-c6aa60c27c9a	Apples Pink Lady	1.000	0	2026-06-12	epos_export	2026-06-17 03:48:41.587399+00	4577780
 9742f1f6-b157-4ce9-8c74-1793b102cc06	38369a6b-442d-4a9f-aba5-099ad5d0370e	Peas in the pod	3.000	0	2026-06-12	epos_export	2026-06-17 03:48:41.587399+00	48138712
 e50b1e80-f884-4757-ad3b-ac598dc6a33d	a8df48f9-bbdc-4f25-b0b9-f329f9db2e26	Physallis Punnet	1.000	0	2026-06-12	epos_export	2026-06-17 03:48:41.587399+00	4580437
@@ -12135,7 +12135,8 @@ ebc522c2-ec91-47be-a722-da15598bfa76	4706bab8-b903-448b-8581-368dbb07356a	Parsni
 96f912b7-ea06-4235-8839-13126dcfeeb8	ed592873-f7ad-4486-b10e-fbfc3205aa01	Lettuce Iceberg	2.000	0	2026-06-12	epos_export	2026-06-17 03:48:41.587399+00	4590128
 cd96a76f-6066-4452-840c-50cdbfd28d2c	\N	7.5 KG Potato	4.000	0	2026-06-10	epos_export	2026-06-17 03:50:39.918213+00	49766771
 021a9bc3-6965-4a63-8c60-1fefc3b93b72	\N	Apple Coxes	1.000	0	2026-06-10	epos_export	2026-06-17 03:50:39.918213+00	52210598
-6c985dbb-d347-4e5f-b428-8592b8f6d52f	\N	Water Bottles - 24	11.000	0	2026-06-08	epos_export	2026-06-17 03:52:38.97098+00	50246432
+ad830097-de34-4fbb-a7fc-1bc41b8e3af7	c4097681-b488-46c6-9ecc-34fb2cbeb066	Orange Small	152.000	4408	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4580429
+05a4fe36-e965-479f-a1d6-a31ae3140dd5	fcedb9db-6631-48cb-b785-0ae38d9b4cf9	Papaya	4.000	1196	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	47744198
 6d33099a-55a6-4249-8ee6-e77247f79ba6	c414ebb1-1d91-46d8-afa3-3962b1d20cdb	Tomato Cherry Punnet	9.000	0	2026-06-08	epos_export	2026-06-17 03:52:38.97098+00	4590159
 81006695-c227-4025-873a-749389541c83	e2838162-83b6-41d9-85c2-d04f4f445967	Lemons	10.000	0	2026-06-08	epos_export	2026-06-17 03:52:38.97098+00	4577796
 5223bbf2-b646-41c0-8062-ef5da9b8608f	fe4be91f-7b90-4427-ae30-a2ed47a831ea	Eggs Tray LARGE	8.000	0	2026-06-08	epos_export	2026-06-17 03:52:38.97098+00	4580448
@@ -12151,7 +12152,6 @@ eab4569d-6d6c-4d45-87c5-cff0288fc6f9	a64175dd-856a-4534-918b-0f772e3d1025	Potato
 febd66bf-beec-43f5-9ccf-acaeb35480b3	\N	cherries	10.000	0	2026-06-10	epos_export	2026-06-17 03:50:39.918213+00	52212461
 ee75b67c-517f-4913-8113-aa1dd9f7c986	\N	cherry	1.000	0	2026-06-10	epos_export	2026-06-17 03:50:39.918213+00	-39108
 ec560e4a-6970-4f99-9e12-3df5010bb6b7	df8d618e-d7da-4755-b47c-b89217b80d50	Closed punnet grapes	9.000	0	2026-06-08	epos_export	2026-06-17 03:52:38.97098+00	47592794
-8b8f5691-2c2d-4307-b1bb-1d4397d1c5d8	\N	chinese leaf	2.000	0	2026-06-10	epos_export	2026-06-17 03:50:39.918213+00	52183545
 232f547d-8615-424b-8af1-c465291ad8fc	21a4c8f2-17a0-4a25-a2c7-c8e01ffd0b92	Date box small	6.000	0	2026-06-08	epos_export	2026-06-17 03:52:38.97098+00	51082442
 bd703170-99e7-4506-87d7-3fa9c4388685	787f5062-344a-497f-ae3c-c00da37b6200	Roasted Pistachios	2.000	0	2026-06-08	epos_export	2026-06-17 03:52:38.97098+00	50153547
 2e75a453-fbcc-4e94-8766-9290cf1f1774	f1ecc381-a61e-4c97-b231-b34133f7d69d	Tomato Loose/Vine	4.000	0	2026-06-08	epos_export	2026-06-17 03:52:38.97098+00	4590157
@@ -12210,8 +12210,7 @@ ed3a9cd9-44fe-4a7a-8014-a152788d40b1	9aaf97d9-8de5-4077-954d-e649f084c29b	Kiwi	2
 32e1390f-b5b7-4c03-95dc-ad087181c4c5	b7ccbf69-3654-4bad-8e34-66c0057dd8c9	Lettuce Romaine / Kos	2.000	0	2026-06-08	epos_export	2026-06-17 03:52:38.97098+00	14774910
 951ef03f-0e47-43de-9ec3-fdd692f28638	db6af055-eda8-44ff-964d-c6aa60c27c9a	Apples Pink Lady	5.000	0	2026-06-08	epos_export	2026-06-17 03:52:38.97098+00	4577780
 baf9bbf3-7c29-4993-90a0-2e17f22fc96b	a8df48f9-bbdc-4f25-b0b9-f329f9db2e26	Physallis Punnet	1.000	0	2026-06-08	epos_export	2026-06-17 03:52:38.97098+00	4580437
-f4832146-b818-4ed2-88c7-0016bb1e3857	\N	Water Bottles - 24	5.000	0	2026-06-10	epos_export	2026-06-17 03:50:39.918213+00	50246432
-26f3eef4-0c16-4383-bd49-12b66f769ebb	\N	watermelon small	8.000	0	2026-06-10	epos_export	2026-06-17 03:50:39.918213+00	52207693
+f4832146-b818-4ed2-88c7-0016bb1e3857	992069e0-8b07-402c-9fe7-ab747972c640	Water Bottles - 24	5.000	0	2026-06-10	epos_export	2026-06-17 03:50:39.918213+00	50246432
 3960904c-88fa-4dd0-9197-cb5f59ebb64a	c414ebb1-1d91-46d8-afa3-3962b1d20cdb	Tomato Cherry Punnet	7.000	0	2026-06-10	epos_export	2026-06-17 03:50:39.918213+00	4590159
 d8ad51ab-0f98-4fe3-be3e-32e1753b56c7	e2838162-83b6-41d9-85c2-d04f4f445967	Lemons	3.000	0	2026-06-10	epos_export	2026-06-17 03:50:39.918213+00	4577796
 bca855da-91d4-4376-888e-5d57931c46d7	fe4be91f-7b90-4427-ae30-a2ed47a831ea	Eggs Tray LARGE	3.000	0	2026-06-10	epos_export	2026-06-17 03:50:39.918213+00	4580448
@@ -12317,21 +12316,35 @@ a456ab21-aca6-49ff-9680-1ab973db9cf4	f1ecc381-a61e-4c97-b231-b34133f7d69d	Tomato
 0cabe34d-0d76-4b1f-b9a9-741f19aeeebf	\N	Loose Nec/Peach	12.000	0	2026-06-09	epos_export	2026-06-17 03:51:33.157311+00	46059428
 8fed7b3b-a1dc-4e17-8b5b-83105716f5f2	e3e632c9-89f5-4e03-8b3d-010b6b9baf5c	Peppers Red	10.000	0	2026-06-05	epos_export	2026-06-17 03:53:36.559789+00	4590139
 067a448f-f893-4084-91d9-b901d34f195f	be162566-2631-4c69-98cb-a003a193a8de	Pears Conference	3.000	0	2026-06-05	epos_export	2026-06-17 03:53:36.559789+00	4580434
-dd5c4e73-3dcd-48dd-afd0-7a31951bd2ae	\N	Papaya	1.000	0	2026-06-04	epos_export	2026-06-17 03:54:33.880082+00	4580430
 10404338-6feb-4e96-b1ec-30c9925b0c27	\N	7.5 KG Potato	5.000	0	2026-06-04	epos_export	2026-06-17 03:54:33.880082+00	49766771
 5aa2f5c5-7b90-4c59-922c-352fd6b9274f	\N	misc melon	1.000	0	2026-06-09	epos_export	2026-06-17 03:51:33.157311+00	-39108
 47ba9313-c919-4e3d-a1f5-570b39fdb9cf	\N	misc peach	1.000	0	2026-06-09	epos_export	2026-06-17 03:51:33.157311+00	-39108
 d4256464-c217-4012-870a-eac4ebc0e53f	\N	misc peaches	1.000	0	2026-06-09	epos_export	2026-06-17 03:51:33.157311+00	-39108
+060f019b-2530-4f35-a762-db7e818133d2	4706bab8-b903-448b-8581-368dbb07356a	Parsnip	25.960	7269	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590132
+f2893367-4f66-4161-bfd3-ffd5c83104aa	2eb8b8b5-a035-41d3-9fa3-a62c54bb34f5	Passion Fruit	3.000	117	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4580431
+6e72304d-578a-4ebc-9b87-207e4727b6b6	8e0ee101-c2ec-45a7-b0da-d9693545e0cd	Pear Conference Punnet	61.000	17080	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	46627206
 b79c3ffa-f6dc-4f8f-8e80-6d1feff5bd00	\N	Nectarine Punnet 1kg LARGE	3.000	0	2026-06-09	epos_export	2026-06-17 03:51:33.157311+00	48855798
-f99f0e40-4049-40dc-a584-a439fbe3abab	\N	Passion Fruit 3 for £1	5.000	0	2026-06-09	epos_export	2026-06-17 03:51:33.157311+00	46682933
+fbe652f1-f570-4723-928b-aaf956566614	be162566-2631-4c69-98cb-a003a193a8de	Pears Conference	71.932	21508	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4580434
+2f32f9d2-f79d-44fa-8320-ff9cd3ae3391	38369a6b-442d-4a9f-aba5-099ad5d0370e	Peas on the pod	23.808	16666	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	48138712
+98b0b1bb-cf6b-4c8c-87cc-5fc674dd5210	cd6a5b06-81e9-4703-8a08-baeb6a504439	Peppers Mixed Pack	32.000	7648	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	46085511
+138ab18c-fa0a-4258-a07f-b3d8a67fee18	e3e632c9-89f5-4e03-8b3d-010b6b9baf5c	Peppers Red	141.074	64122	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590139
+8aa67a90-7584-4b77-898d-67a76a5978da	298c882e-26db-4c5c-bc08-40035214a9e1	Peppers Yellow	17.552	7963	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590141
 28ca53c4-9e4a-476b-9dce-441bc60f00bd	\N	peach	2.000	0	2026-06-09	epos_export	2026-06-17 03:51:33.157311+00	-39108
-bc62f1bb-5045-4cb7-b70e-3c2c86483e38	\N	button mushroom tub	4.000	0	2026-06-05	epos_export	2026-06-17 03:53:36.559789+00	52184056
+084d86e7-a2a3-441b-af3e-eea989dd960b	a8df48f9-bbdc-4f25-b0b9-f329f9db2e26	Physallis Punnet	15.000	2535	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4580437
+3855802e-784a-43ed-ae5e-dee589167dc4	e29d7739-a29f-48bd-bc07-3d6e7794f828	Pineapple Large	51.000	12189	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4580438
+9ce1a9f4-1c12-48b2-8a91-5004e4264da3	72006aef-fabd-425e-bca7-439587c674b1	Plum Red Loose	28.708	10335	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4580440
+973abef4-dea0-4e8e-8c6f-b4afee55eca6	2881b04a-4d89-4eca-8180-b9293f53f791	Potato 2kg Bag	475.000	79050	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590146
 9490dd9f-f81c-4426-ba3e-a930a24bad79	\N	pink lady tub	1.000	0	2026-06-09	epos_export	2026-06-17 03:51:33.157311+00	52173822
+c7fa47b4-4eff-4ff0-b3b1-aa9c56f3d4ae	8be94809-6c19-4f8e-b797-fe83416f4458	Potato Loose	32.511	3901	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	46077562
+c07f2dcd-061d-409c-b0a3-aaab1cb3ff23	a2d09c46-0c0f-4a89-8db3-b2e225fed27c	Potatoes Baby Roast	83.042	18684	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590143
+0a900898-b6f4-4fba-9632-aba5b1569035	a7ffe61b-7b35-4a8c-bc6c-3c73b4902954	Pre Pack Apple	62.000	12338	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	19247718
 b4310307-760e-43c1-ae0e-7c5e448a7764	\N	pre pack onions	1.000	0	2026-06-09	epos_export	2026-06-17 03:51:33.157311+00	-39108
 0df88ad8-da61-4ad7-b0b9-eef30f6447d9	\N	small nectarine	11.000	0	2026-06-09	epos_export	2026-06-17 03:51:33.157311+00	52194764
 4f640a31-ddc9-4043-8f3c-f3367a9570fa	\N	sweet pepper	3.000	0	2026-06-09	epos_export	2026-06-17 03:51:33.157311+00	52176350
-3233cf98-76f4-414a-b525-64498fefff5e	\N	Water Bottles - 24	4.000	0	2026-06-09	epos_export	2026-06-17 03:51:33.157311+00	50246432
-e6962aa8-9fe4-4433-abee-53379f7f8a27	\N	watermelon small	2.000	0	2026-06-09	epos_export	2026-06-17 03:51:33.157311+00	52207693
+c070816d-2aba-4c67-9ab9-9e0d75c41406	b14acd54-6d55-4368-afb4-772a60542e84	Punnet Plum	3.000	300	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	47399643
+117f3551-dfaa-4212-a5b2-096da2925208	ccf693c0-8893-4258-a09b-78eb3a4f51ca	Radish Pack	13.000	858	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590150
+f99f0e40-4049-40dc-a584-a439fbe3abab	2eb8b8b5-a035-41d3-9fa3-a62c54bb34f5	Passion Fruit 3 for £1	5.000	0	2026-06-09	epos_export	2026-06-17 03:51:33.157311+00	46682933
+3233cf98-76f4-414a-b525-64498fefff5e	992069e0-8b07-402c-9fe7-ab747972c640	Water Bottles - 24	4.000	0	2026-06-09	epos_export	2026-06-17 03:51:33.157311+00	50246432
 1104a2f8-3872-49e2-9cca-56897035ae45	c414ebb1-1d91-46d8-afa3-3962b1d20cdb	Tomato Cherry Punnet	10.000	0	2026-06-09	epos_export	2026-06-17 03:51:33.157311+00	4590159
 5cc24489-4ed4-41e6-b6f0-d6073d541cb6	e2838162-83b6-41d9-85c2-d04f4f445967	Lemons	15.000	0	2026-06-09	epos_export	2026-06-17 03:51:33.157311+00	4577796
 973926cb-0198-4b1e-8afc-e3f7726b6cb9	fe4be91f-7b90-4427-ae30-a2ed47a831ea	Eggs Tray LARGE	4.000	0	2026-06-09	epos_export	2026-06-17 03:51:33.157311+00	4580448
@@ -12389,15 +12402,38 @@ b4c32dda-360c-495d-b061-caa6b36cde5f	e8bfae4c-a7a3-4555-850b-b7f2cca1b619	Miniat
 867d5b41-ce5b-4eca-908d-1ef13188431f	8e0ee101-c2ec-45a7-b0da-d9693545e0cd	Pear Conference Punnet	4.000	0	2026-06-09	epos_export	2026-06-17 03:51:33.157311+00	46627206
 fde93a44-6b4b-4be8-95ae-3efc8a43b2fb	4706bab8-b903-448b-8581-368dbb07356a	Parsnip	1.000	0	2026-06-09	epos_export	2026-06-17 03:51:33.157311+00	4590132
 d05d0576-b5fd-477d-bacc-3ec67696c4a4	ed592873-f7ad-4486-b10e-fbfc3205aa01	Lettuce Iceberg	1.000	0	2026-06-09	epos_export	2026-06-17 03:51:33.157311+00	4590128
+79a7f4cc-69c7-40fe-bbf8-5299b765db9d	b3e45567-d165-47f4-ac58-b499e052c08f	Roasted Almonds	4.000	600	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	50153533
+1c6be039-74a7-4705-83a4-37a4787b0130	787f5062-344a-497f-ae3c-c00da37b6200	Roasted Pistachios	10.000	1500	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	50153547
 0d511ee5-d679-4c0d-bd6e-a4a7035ef492	\N	Fruit Shoot 3 for £1	5.000	0	2026-06-05	epos_export	2026-06-17 03:53:36.559789+00	51069425
+3ab31228-ed5d-4e9d-b700-04c6a0cce111	53fac4f9-9b52-4d7f-9c3a-365d9f4faeb1	Shallots	1.000	40	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	46301462
+1a19cb0a-c91a-46bd-9106-5290cd7ad69c	6d4ac15f-5c33-4b70-8ad8-641bc710d2cb	Star Fruit	6.000	300	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	50207600
+4093f1bb-548d-4827-8d6d-99c696ea2777	32322628-aca1-4280-8a83-8a4133546bbb	Strawberry Punnet	19.000	1900	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4580443
+5c0ad4bc-4f95-4e69-924e-93b3939745a5	132c41ef-8b74-4b5e-b453-14eae3006db3	Sugar Snaps	38.000	6422	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590168
+e3a18e7a-24f5-47c4-bd7c-a2706520889b	28ff7b46-5d20-4beb-9bd0-997eeb750500	Swede	20.030	3205	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590152
 e868d8dc-f6cb-46b1-8221-a3b557244e1f	\N	large watermelon	1.000	0	2026-06-05	epos_export	2026-06-17 03:53:36.559789+00	52193367
+fa6aaa70-f6ed-4fcb-801b-f7aef3fcd878	1dcd2a92-3093-4328-a17f-6333249ef914	Sweet Potato	146.050	43669	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590154
+62a51600-7742-466d-b0ff-7e019f6d9db9	70a4c00e-9871-4f4f-9af2-3c0a43b165ef	Tamarind	3.000	897	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	14068110
 4621e41c-9a26-42cd-9d6d-f1b4eb549073	\N	Loose Nec/Peach	11.000	0	2026-06-05	epos_export	2026-06-17 03:53:36.559789+00	46059428
+c9b5661c-c962-43b3-8e87-366c226d0494	21a407d8-7efd-4222-9f18-3ec3cf4f1702	Tangerine PUNNET	61.000	21350	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	47330567
+9d70bd10-1230-4e3c-910e-25083715138e	3d4f1023-ca6a-413c-8018-384a605c4c42	Tangerine Loose	79.696	26300	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4580444
+1e20ef85-34d5-407a-aa32-386697929136	c414ebb1-1d91-46d8-afa3-3962b1d20cdb	Tomato Cherry Punnet	285.000	34200	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590159
 02fe3ad0-c946-484c-bc1b-28d950b72e75	\N	misc berry	3.000	0	2026-06-05	epos_export	2026-06-17 03:53:36.559789+00	-39108
 f0291ce6-2aeb-4a34-9d52-4de7b8d4bb1d	\N	misc horseradish	1.000	0	2026-06-05	epos_export	2026-06-17 03:53:36.559789+00	-39108
-3cb6db86-cb04-444d-9701-0272d26ea847	\N	Passion Fruit 3 for £1	4.000	0	2026-06-05	epos_export	2026-06-17 03:53:36.559789+00	46682933
+5d674b1d-9c59-4370-8564-985ba7a636e4	f1ecc381-a61e-4c97-b231-b34133f7d69d	Tomato Loose/Vine	66.904	32114	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	4590157
+23d4f957-93a7-4038-a1dc-907ca33eba7a	195ac8a7-948c-4e65-ba36-e18f018907ab	Water Bottle 500ml	36.000	900	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	50342025
+b142c41a-441c-4f64-9fd1-be62b308fb30	c65565e5-cdec-447c-9197-87dd8ea0576d	Watermelon	5.000	1750	2026-05-01	epos_month_import	2026-05-25 23:51:44.858876+00	48921831
+173eb693-3b0a-474c-a486-9727583823d2	7d48b88d-6791-4182-b624-8f58b303035e	button mushroom tub	13.000	585	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	52184056
+25476100-336b-4a1e-a6f2-c7fc632de692	5a1962b7-bc7e-4011-bd3c-00fb7620055e	watermelon small	27.000	10800	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	52207693
+9eb40963-e234-428b-8d99-ede7b649757e	5a1962b7-bc7e-4011-bd3c-00fb7620055e	watermelon small	2.000	0	2026-06-15	epos_export	2026-06-17 03:46:35.210124+00	52207693
+3462c61d-2948-4123-9ce0-96fb72905bc9	5a1962b7-bc7e-4011-bd3c-00fb7620055e	watermelon small	12.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	52207693
+23c647c8-f3f3-449a-98c8-33865d8ce493	5a1962b7-bc7e-4011-bd3c-00fb7620055e	watermelon small	5.000	0	2026-06-12	epos_export	2026-06-17 03:48:41.587399+00	52207693
+26f3eef4-0c16-4383-bd49-12b66f769ebb	5a1962b7-bc7e-4011-bd3c-00fb7620055e	watermelon small	8.000	0	2026-06-10	epos_export	2026-06-17 03:50:39.918213+00	52207693
+bc62f1bb-5045-4cb7-b70e-3c2c86483e38	7d48b88d-6791-4182-b624-8f58b303035e	button mushroom tub	4.000	0	2026-06-05	epos_export	2026-06-17 03:53:36.559789+00	52184056
+e6962aa8-9fe4-4433-abee-53379f7f8a27	5a1962b7-bc7e-4011-bd3c-00fb7620055e	watermelon small	2.000	0	2026-06-09	epos_export	2026-06-17 03:51:33.157311+00	52207693
+3cb6db86-cb04-444d-9701-0272d26ea847	2eb8b8b5-a035-41d3-9fa3-a62c54bb34f5	Passion Fruit 3 for £1	4.000	0	2026-06-05	epos_export	2026-06-17 03:53:36.559789+00	46682933
+2b0e5a9a-1400-4c46-bced-1a4bac732996	992069e0-8b07-402c-9fe7-ab747972c640	Water Bottles - 24	3.000	0	2026-06-05	epos_export	2026-06-17 03:53:36.559789+00	50246432
 a4d4b30d-b563-4b25-8ee9-b4f84e41194b	\N	Prune Tub	1.000	0	2026-06-05	epos_export	2026-06-17 03:53:36.559789+00	51657149
 067d9386-d401-47fd-ae76-eb8e2ce7c09f	\N	small nectarine	8.000	0	2026-06-05	epos_export	2026-06-17 03:53:36.559789+00	52194764
-2b0e5a9a-1400-4c46-bced-1a4bac732996	\N	Water Bottles - 24	3.000	0	2026-06-05	epos_export	2026-06-17 03:53:36.559789+00	50246432
 28be1a63-b056-4998-847f-c0f09518a59f	56f46a26-3c7e-41ce-ba00-dfbee7dcf626	Aubergine	5.000	0	2026-06-05	epos_export	2026-06-17 03:53:36.559789+00	4590120
 4bd8f14b-9f77-4cbc-aaa8-b38505190f4e	8314af80-11a7-4d27-a9d1-ca00943886f5	Avocado	8.000	0	2026-06-05	epos_export	2026-06-17 03:53:36.559789+00	2602077
 75a929d6-b21f-4e31-9f19-f1f48071c669	55b6a02c-33a1-4f36-b857-abff74aff428	Apple Cooking	1.000	0	2026-06-05	epos_export	2026-06-17 03:53:36.559789+00	48180213
@@ -12440,24 +12476,36 @@ e2e243e7-df9a-49c9-88ab-10a2d66d475f	e8bfae4c-a7a3-4555-850b-b7f2cca1b619	Miniat
 4cbde74b-b5e5-4eea-9a82-382106406c6d	6ca074f2-d330-4d85-8ac6-831c4b51d081	Apples Granny	1.000	0	2026-06-05	epos_export	2026-06-17 03:53:36.559789+00	4577778
 5e4d25ec-0b2d-4f7c-b177-e7f46cee454d	8e0ee101-c2ec-45a7-b0da-d9693545e0cd	Pear Conference Punnet	1.000	0	2026-06-05	epos_export	2026-06-17 03:53:36.559789+00	46627206
 a4b83978-8222-4aa6-9bad-d5c6ed3c7059	ed592873-f7ad-4486-b10e-fbfc3205aa01	Lettuce Iceberg	3.000	0	2026-06-05	epos_export	2026-06-17 03:53:36.559789+00	4590128
+334e0f66-90b3-4add-a395-516fe90f3795	c414ebb1-1d91-46d8-afa3-3962b1d20cdb	cherry tomato tub	25.000	2500	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	52217185
+5f4cef50-64d2-482d-821c-3e570b18841e	35fac0b9-1ae9-4f97-b8eb-089b10f07ca4	mango	14.000	1400	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	52183532
+27afb048-4827-4e9e-b3fe-18464a81ab09	2eb8b8b5-a035-41d3-9fa3-a62c54bb34f5	Passion Fruit 3 for £1	76.000	7600	2026-06-01	epos_month_import	2026-06-12 15:14:09.554922+00	46682933
+592452ff-4220-49bd-afb2-ca179dc558be	35fac0b9-1ae9-4f97-b8eb-089b10f07ca4	mango	1.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	52183532
+6c43b34e-dfc3-4229-ab21-ccefb103c00b	2eb8b8b5-a035-41d3-9fa3-a62c54bb34f5	Passion Fruit 3 for £1	1.000	0	2026-06-08	epos_export	2026-06-17 03:52:38.97098+00	46682933
+e0ebfd2b-0429-4eef-93ce-0c2a0ec68aaf	c414ebb1-1d91-46d8-afa3-3962b1d20cdb	cherry tomato tub	6.000	0	2026-06-12	epos_export	2026-06-17 03:48:41.587399+00	52217185
+bf79e21a-8799-49d5-a014-2f3a5fab37b4	2eb8b8b5-a035-41d3-9fa3-a62c54bb34f5	Passion Fruit 3 for £1	8.000	0	2026-06-12	epos_export	2026-06-17 03:48:41.587399+00	46682933
+bf706daf-649e-47bf-ba39-66732e24bf2e	7d48b88d-6791-4182-b624-8f58b303035e	button mushroom tub	5.000	0	2026-06-04	epos_export	2026-06-17 03:54:33.880082+00	52184056
+047f0ce3-91b0-4d8e-ad31-4497d6cbc2bf	35fac0b9-1ae9-4f97-b8eb-089b10f07ca4	mango	1.000	0	2026-06-04	epos_export	2026-06-17 03:54:33.880082+00	52183532
+c98592e5-706f-4e25-8d5d-1d506ab2a28c	2eb8b8b5-a035-41d3-9fa3-a62c54bb34f5	Passion Fruit 3 for £1	23.000	0	2026-06-04	epos_export	2026-06-17 03:54:33.880082+00	46682933
+ba526304-3737-493d-ac09-ab15acd269b0	fcedb9db-6631-48cb-b785-0ae38d9b4cf9	Papaya	2.000	0	2026-06-11	epos_export	2026-06-17 03:49:31.354489+00	4580430
+9afb549b-38df-4499-9c6e-0943ed1247fa	992069e0-8b07-402c-9fe7-ab747972c640	Water Bottles - 24	3.000	0	2026-06-16	epos_export	2026-06-17 03:48:41.501981+00	50246432
+6c985dbb-d347-4e5f-b428-8592b8f6d52f	992069e0-8b07-402c-9fe7-ab747972c640	Water Bottles - 24	11.000	0	2026-06-08	epos_export	2026-06-17 03:52:38.97098+00	50246432
+8b8f5691-2c2d-4307-b1bb-1d4397d1c5d8	adcb81b3-6477-4595-8bef-0977eb5cc5c0	chinese leaf	2.000	0	2026-06-10	epos_export	2026-06-17 03:50:39.918213+00	52183545
+dd5c4e73-3dcd-48dd-afd0-7a31951bd2ae	fcedb9db-6631-48cb-b785-0ae38d9b4cf9	Papaya	1.000	0	2026-06-04	epos_export	2026-06-17 03:54:33.880082+00	4580430
+7583db88-a199-469f-80b4-a9a06b805b43	adcb81b3-6477-4595-8bef-0977eb5cc5c0	chinese leaf	1.000	0	2026-06-04	epos_export	2026-06-17 03:54:33.880082+00	52183545
 694c05bd-30ba-4574-a842-f5d4a1568f63	\N	box tomato	1.000	0	2026-06-04	epos_export	2026-06-17 03:54:33.880082+00	-39108
-bf706daf-649e-47bf-ba39-66732e24bf2e	\N	button mushroom tub	5.000	0	2026-06-04	epos_export	2026-06-17 03:54:33.880082+00	52184056
-7583db88-a199-469f-80b4-a9a06b805b43	\N	chinese leaf	1.000	0	2026-06-04	epos_export	2026-06-17 03:54:33.880082+00	52183545
 2b276646-8606-4290-a6fe-a7ef8fed0a48	\N	Fruit Shoot 3 for £1	5.000	0	2026-06-04	epos_export	2026-06-17 03:54:33.880082+00	51069425
 a6bf565a-d130-4626-82dd-9ad7f7704eae	\N	large watermelon	12.000	0	2026-06-04	epos_export	2026-06-17 03:54:33.880082+00	52193367
 249de35b-3a37-422e-850e-6d3b77bd491b	\N	Loose Nec/Peach	8.000	0	2026-06-04	epos_export	2026-06-17 03:54:33.880082+00	46059428
-047f0ce3-91b0-4d8e-ad31-4497d6cbc2bf	\N	mango	1.000	0	2026-06-04	epos_export	2026-06-17 03:54:33.880082+00	52183532
 881af427-d6dc-49bb-8ff9-90ab80716ffc	\N	misc berry	1.000	0	2026-06-04	epos_export	2026-06-17 03:54:33.880082+00	-39108
 d7e672a1-c490-4ad0-b6a6-c851d99ffe58	\N	misc garlic	1.000	0	2026-06-04	epos_export	2026-06-17 03:54:33.880082+00	-39108
 623c2f2d-f630-4534-b9ad-ef98d44b44f0	\N	misc peeled pots	1.000	0	2026-06-04	epos_export	2026-06-17 03:54:33.880082+00	-39108
 1e85ae3c-6b65-4c91-a329-539d302b36ce	\N	misc pits	1.000	0	2026-06-04	epos_export	2026-06-17 03:54:33.880082+00	-39108
 54d27564-6d1f-47ee-b2ff-0c4e06641b8d	\N	Nectarine Loose	10.000	0	2026-06-04	epos_export	2026-06-17 03:54:33.880082+00	49372420
-c98592e5-706f-4e25-8d5d-1d506ab2a28c	\N	Passion Fruit 3 for £1	23.000	0	2026-06-04	epos_export	2026-06-17 03:54:33.880082+00	46682933
+df4a5d16-3a03-4f40-9e48-acb4d15338b8	992069e0-8b07-402c-9fe7-ab747972c640	Water Bottles - 24	9.000	0	2026-06-04	epos_export	2026-06-17 03:54:33.880082+00	50246432
 82996587-bfa6-4310-a2b5-59f92ff01988	\N	Prune Tub	1.000	0	2026-06-04	epos_export	2026-06-17 03:54:33.880082+00	51657149
 5009920b-c41b-4601-86f9-e20f65743544	\N	small nectarine	13.000	0	2026-06-04	epos_export	2026-06-17 03:54:33.880082+00	52194764
 06a6a379-b9db-4474-8e50-0ce6d213459c	\N	strawberries	16.000	0	2026-06-04	epos_export	2026-06-17 03:54:33.880082+00	52194043
 08fdcb85-3729-40e9-a28a-06617418757f	\N	sweet pepper	1.000	0	2026-06-04	epos_export	2026-06-17 03:54:33.880082+00	52176350
-df4a5d16-3a03-4f40-9e48-acb4d15338b8	\N	Water Bottles - 24	9.000	0	2026-06-04	epos_export	2026-06-17 03:54:33.880082+00	50246432
 ff70a8f7-a768-4e88-b733-054a26cbb0a3	c414ebb1-1d91-46d8-afa3-3962b1d20cdb	Tomato Cherry Punnet	15.000	0	2026-06-04	epos_export	2026-06-17 03:54:33.880082+00	4590159
 62a41417-ef78-4f39-a0b6-ea764d778811	e2838162-83b6-41d9-85c2-d04f4f445967	Lemons	26.000	0	2026-06-04	epos_export	2026-06-17 03:54:33.880082+00	4577796
 d50aff38-0aa1-42c1-9556-511f6e1a045f	fe4be91f-7b90-4427-ae30-a2ed47a831ea	Eggs Tray LARGE	6.000	0	2026-06-04	epos_export	2026-06-17 03:54:33.880082+00	4580448
@@ -12529,18 +12577,18 @@ e31bf3e9-987e-42d8-b850-dbae08e60b03	6f859222-21e6-4a42-b7a6-ab42e914d07a	Onion 
 bea6d223-20c5-4eea-bdf0-88d3f401ac4c	4706bab8-b903-448b-8581-368dbb07356a	Parsnip	9.000	0	2026-06-04	epos_export	2026-06-17 03:54:33.880082+00	4590132
 be015ad1-8e09-4696-a3c2-cd7abd2d50cd	ed592873-f7ad-4486-b10e-fbfc3205aa01	Lettuce Iceberg	4.000	0	2026-06-04	epos_export	2026-06-17 03:54:33.880082+00	4590128
 76df6221-83ef-4536-be3c-6e0b7f7d5df1	\N	7.5 KG Potato	2.000	0	2026-06-03	epos_export	2026-06-17 03:55:20.736706+00	49766771
+f4cffc4a-9279-488b-840a-ad86ea59ceff	35fac0b9-1ae9-4f97-b8eb-089b10f07ca4	mango	1.000	0	2026-06-03	epos_export	2026-06-17 03:55:20.736706+00	52183532
 851d678b-3f73-4b17-9800-ca9a1edd826f	\N	Fruit Shoot 3 for £1	1.000	0	2026-06-03	epos_export	2026-06-17 03:55:20.736706+00	51069425
 b4e415ed-3917-4a99-83cf-1bc88c96c779	\N	Loose Nec/Peach	9.000	0	2026-06-03	epos_export	2026-06-17 03:55:20.736706+00	46059428
-f4cffc4a-9279-488b-840a-ad86ea59ceff	\N	mango	1.000	0	2026-06-03	epos_export	2026-06-17 03:55:20.736706+00	52183532
 5fed2c7e-14d1-4754-914a-dab37b9cbacd	\N	misc aubergine	1.000	0	2026-06-03	epos_export	2026-06-17 03:55:20.736706+00	-39108
 825ffc07-88dc-4afd-89ac-299a38fecf7c	\N	misc banana	1.000	0	2026-06-03	epos_export	2026-06-17 03:55:20.736706+00	-39108
 68c79940-bb3f-455b-aab8-8596419d8dce	\N	misc berry	2.000	0	2026-06-03	epos_export	2026-06-17 03:55:20.736706+00	-39108
 7181e137-0ef5-4fc5-9091-3ec2a8f8a082	\N	misc onions	1.000	0	2026-06-03	epos_export	2026-06-17 03:55:20.736706+00	-39108
 77a57ca2-a13e-47cf-a89a-d0eebc4a0ccb	\N	misc water	1.000	0	2026-06-03	epos_export	2026-06-17 03:55:20.736706+00	-39108
 8fa346a6-ac27-4558-b4fb-19dc7f87d10c	\N	Nectarine Loose	1.000	0	2026-06-03	epos_export	2026-06-17 03:55:20.736706+00	49372420
-5fb4b432-0896-40ea-ab49-eacd5df5aeb3	\N	Passion Fruit 3 for £1	10.000	0	2026-06-03	epos_export	2026-06-17 03:55:20.736706+00	46682933
+5fb4b432-0896-40ea-ab49-eacd5df5aeb3	2eb8b8b5-a035-41d3-9fa3-a62c54bb34f5	Passion Fruit 3 for £1	10.000	0	2026-06-03	epos_export	2026-06-17 03:55:20.736706+00	46682933
+56e1bfc1-c21b-4d02-a076-731487c1fb3d	992069e0-8b07-402c-9fe7-ab747972c640	Water Bottles - 24	2.000	0	2026-06-03	epos_export	2026-06-17 03:55:20.736706+00	50246432
 3b09ba5d-64a9-47fb-87b7-bc77b02c5c95	\N	pink lady tub	1.000	0	2026-06-03	epos_export	2026-06-17 03:55:20.736706+00	52173822
-56e1bfc1-c21b-4d02-a076-731487c1fb3d	\N	Water Bottles - 24	2.000	0	2026-06-03	epos_export	2026-06-17 03:55:20.736706+00	50246432
 7584f8fa-f291-4c2a-aea9-05f47b9d28d5	c414ebb1-1d91-46d8-afa3-3962b1d20cdb	Tomato Cherry Punnet	10.000	0	2026-06-03	epos_export	2026-06-17 03:55:20.736706+00	4590159
 23c69b12-a23f-47c7-89ff-33afd744b266	e2838162-83b6-41d9-85c2-d04f4f445967	Lemons	10.000	0	2026-06-03	epos_export	2026-06-17 03:55:20.736706+00	4577796
 654ecbd0-231f-429c-8d5a-f920471f72ee	fe4be91f-7b90-4427-ae30-a2ed47a831ea	Eggs Tray LARGE	5.000	0	2026-06-03	epos_export	2026-06-17 03:55:20.736706+00	4580448
@@ -12719,6 +12767,15 @@ COPY public.schema_migration_log (filename, applied_at) FROM stdin;
 0095_fix_orphan_matched_items.sql	2026-06-18 15:41:41.138856+00
 0096_migration_ledger.sql	2026-06-18 15:41:41.141219+00
 0097_normalise_mapping_descriptions.sql	2026-06-23 21:25:23.245891+00
+0104_reconcile_supplier_tables.sql	2026-06-24 21:48:43.217206+00
+0098_real_suppliers.sql	2026-06-24 21:51:31.163002+00
+0099_epos_price_align.sql	2026-06-24 21:51:31.163002+00
+0100_epos_id_fixes.sql	2026-06-24 21:51:31.163002+00
+0101_supplier_contact_details.sql	2026-06-24 21:51:31.163002+00
+0102_product_epos_aliases.sql	2026-06-24 21:51:31.163002+00
+0103_session_data_fixes_24jun.sql	2026-06-24 21:51:31.163002+00
+0105_product_plu_code.sql	2026-06-24 23:27:56.823424+00
+0106_till_client_uuid.sql	2026-06-25 00:08:47.658415+00
 \.
 
 
@@ -12730,7 +12787,7 @@ COPY public.supplier_product_mappings (id, supplier_name, raw_description, produ
 28546803-af6a-4540-a357-c134b552e362	jr holland	CELERY - X15 GS	08e3bfd2-b87c-4a1b-8229-8a93b3febbe9	\N	1	2026-06-24 02:02:39.9838+00	2026-06-24 02:02:39.9838+00	count	15	\N	confirmed	950	1	CELERY - X15 GS
 1fe7b387-d882-4849-8b9b-6adae365cffe	jr holland	RED PEPPERS - DUTCH	e3e632c9-89f5-4e03-8b3d-010b6b9baf5c	\N	3	2026-05-27 20:40:11.775399+00	2026-06-24 02:02:40.073104+00	weight	\N	5.00	confirmed	850	2	RED PEPPERS - DUTCH
 25a197e4-7caa-4a2b-92d0-e69ab547220f	jr holland	CHERRY TOMATOES - MAROC X9	f1ecc381-a61e-4c97-b231-b34133f7d69d	\N	1	2026-06-24 02:02:40.107004+00	2026-06-24 02:02:40.107004+00	count	9	\N	confirmed	450	1	CHERRY TOMATOES - MAROC X9
-23e22edb-29c2-4daa-ab55-c4d690ef4ec4	jr holland	COURGETTES - CHATA	e4be8932-840d-4a2f-81dd-340f834cfc6c	\N	1	2026-06-24 02:02:40.003155+00	2026-06-24 17:09:47.569073+00	weight	\N	5.00	confirmed	750	1	COURGETTES - CHATA
+23e22edb-29c2-4daa-ab55-c4d690ef4ec4	jr holland	COURGETTES - CHATA	e4be8932-840d-4a2f-81dd-340f834cfc6c	\N	2	2026-06-24 02:02:40.003155+00	2026-06-25 01:48:50.325076+00	weight	\N	5.00	confirmed	750	1	COURGETTES - CHATA
 76610242-70c2-493c-8043-4f790461f65d	thomas baty	WASHED POTATO SORAYA 25KG	b22c888d-a1e1-4ff1-a2d4-507f8ba43c12	\N	1	2026-06-09 21:48:30.194277+00	2026-06-23 20:27:39.917403+00	weight	\N	25.00	confirmed	\N	1	WASHED POTATO SORAYA 25KG
 a50ffc1e-9f6c-4fef-898d-7d804cdbeb63	thomas baty	MIDS POTATO 10KG	a64175dd-856a-4534-918b-0f772e3d1025	\N	1	2026-06-09 21:48:30.194277+00	2026-06-23 20:27:39.917403+00	count	4	10.00	confirmed	\N	1	MIDS POTATO 10KG
 63297e7b-4214-4726-b695-d6aa11694b91	redbridge produce & flowers limited	BANANA. COSTA RICA. 18KG.	d85d0d21-166f-4fcb-967d-df877ee9b56a	\N	1	2026-06-04 11:26:15.449858+00	2026-06-23 20:27:39.917403+00	weight	\N	18.00	confirmed	1900	1	BANANA COSTA RICA 18KG
@@ -12803,13 +12860,13 @@ c3b08aef-f4c9-4fca-ad1a-be66c3ad87b4	dole wholesale gateshead	NECTARINE . SPAIN 
 540a51ac-1f73-44fb-9362-4431f0ad4d74	dole wholesale gateshead	MELON WATER PT 5 20KG .	1c6cc1d4-7705-4692-8447-eeb815b9a4e1	\N	1	2026-05-27 17:29:24.344068+00	2026-06-23 20:27:39.917403+00	weight	\N	20.00	confirmed	1700	5	MELON WATER PT 5 20KG
 92aaa157-f7d8-4166-86e4-24c563588acc	dole wholesale gateshead	KIWI . NZ 28 3KG .	9aaf97d9-8de5-4077-954d-e649f084c29b	\N	1	2026-05-27 17:29:26.783345+00	2026-06-23 20:27:39.917403+00	weight	\N	3.00	confirmed	1300	5	KIWI NZ 28 3KG
 65459c57-e1f1-4cd9-823a-26aa37b63474	dole wholesale gateshead	POMEGRANATE . TURKEY 7 4KG .	b3b40799-e152-443b-b65e-21c530579670	\N	1	2026-05-27 17:29:28.054434+00	2026-06-23 20:27:39.917403+00	weight	\N	4.00	confirmed	750	4	POMEGRANATE TURKEY 7 4KG
-1601fd06-3834-4dc0-8353-b70d2d487e2c	jr holland	DUTCH TOMATOES - PRIME TOM	f1ecc381-a61e-4c97-b231-b34133f7d69d	\N	1	2026-06-24 07:58:32.307307+00	2026-06-24 17:09:47.569073+00	weight	\N	5.00	confirmed	480	1	DUTCH TOMATOES - PRIME TOM
 d098a9da-14ef-49e9-803d-077e50a35a01	dole wholesale gateshead	POMEGRANATE . PE 7 5KG .	b3b40799-e152-443b-b65e-21c530579670	\N	1	2026-05-27 17:29:27.212291+00	2026-06-23 20:27:39.917403+00	weight	\N	5.00	confirmed	750	4	POMEGRANATE PE 7 5KG
 6b044651-7394-497e-af80-6eedc46e21e6	dole wholesale gateshead	POMEGRANATE . TURKEY 8 4KG .	b3b40799-e152-443b-b65e-21c530579670	\N	1	2026-05-27 17:29:28.251282+00	2026-06-23 20:27:39.917403+00	weight	\N	4.00	confirmed	900	4	POMEGRANATE TURKEY 8 4KG
 e60fa18a-7722-453b-bf4d-f9c0c93d6410	dole wholesale gateshead	SATSUMA . PERU 72 10KG .	3d4f1023-ca6a-413c-8018-384a605c4c42	\N	1	2026-05-27 17:29:27.788056+00	2026-06-23 20:27:39.917403+00	weight	\N	10.00	confirmed	1900	4	SATSUMA PERU 72 10KG
 834627a8-f4b0-4692-8e57-618b1fbb18f7	dole wholesale gateshead	APPLE PINK LADY FR 10X500G 5KG PREPACKED	db6af055-eda8-44ff-964d-c6aa60c27c9a	\N	2	2026-05-27 17:30:25.90191+00	2026-06-23 20:27:39.917403+00	count	10	\N	confirmed	1400	1	APPLE PINK LADY FR 10X500G 5KG PREPACKED
 4b0f5b22-a847-4fc7-be04-f4eb4d63d41f	dole wholesale gateshead	PEPPER SWEET BITE UK . 3KG .	cd6a5b06-81e9-4703-8a08-baeb6a504439	\N	1	2026-05-27 17:30:45.881202+00	2026-06-23 20:27:39.917403+00	weight	\N	3.00	confirmed	800	1	PEPPER SWEET BITE UK 3KG
 c4806f16-eef0-4e8b-af1b-0140a58446c7	dole wholesale gateshead	APPLE GOLDEN DELICIOUS ITALY 75/80 12KG .	cf2816c9-a004-4a85-b2d5-82664d9ae837	\N	1	2026-05-27 17:29:19.057326+00	2026-06-23 20:27:39.917403+00	weight	\N	12.00	confirmed	1800	7	APPLE GOLDEN DELICIOUS ITALY 75/80 12KG
+1601fd06-3834-4dc0-8353-b70d2d487e2c	jr holland	DUTCH TOMATOES - PRIME TOM	f1ecc381-a61e-4c97-b231-b34133f7d69d	\N	2	2026-06-24 07:58:32.307307+00	2026-06-25 01:48:50.079356+00	weight	\N	5.00	confirmed	480	1	DUTCH TOMATOES - PRIME TOM
 23bec36d-8b4b-4890-9b05-9766ff9bf5fd	jr holland	PHYSALLIS - PUNNNETS	a8df48f9-bbdc-4f25-b0b9-f329f9db2e26	\N	1	2026-05-27 20:40:13.717625+00	2026-06-23 20:27:39.917403+00	count	1	\N	confirmed	110	1	PHYSALLIS - PUNNNETS
 722faf0b-17ea-4372-9a0b-6c4b0d2d5d05	jr holland	RADISH PRE PACKED - X20	ccf693c0-8893-4258-a09b-78eb3a4f51ca	\N	1	2026-05-27 20:40:12.888232+00	2026-06-23 20:27:39.917403+00	count	20	\N	confirmed	600	1	RADISH PRE PACKED - X20
 3a353129-fe9a-4d80-af17-6919ba685303	jr holland	RED PEPPERS - UK BLACK BOX	e3e632c9-89f5-4e03-8b3d-010b6b9baf5c	\N	1	2026-05-27 20:40:10.300846+00	2026-06-23 20:27:39.917403+00	weight	\N	5.00	confirmed	800	2	RED PEPPERS - UK BLACK BOX
@@ -12874,7 +12931,6 @@ da51fd4b-16ed-4bd2-aa3a-e1b6ad0b1abb	dole wholesale gateshead	POMELO . CN 10 12K
 138e514d-a87f-4466-ab52-d99bb20ea933	dole wholesale gateshead	CLEMENTINE NARDOCOTT SPAIN . 10KG .	3e03f4e8-2521-4bed-9e2a-a26bb507e8f3	\N	1	2026-05-27 17:29:38.297965+00	2026-06-23 20:27:39.917403+00	count	1	10.00	confirmed	2100	3	CLEMENTINE NARDOCOTT SPAIN 10KG
 f4d1b8ae-6ccf-423b-80bb-3f65cb6fcc4f	total produce	PEARS CONFERENCE BELGIUM. 12KG.	be162566-2631-4c69-98cb-a003a193a8de	\N	7	2026-06-10 08:03:48.111537+00	2026-06-24 02:24:51.942927+00	weight	\N	12.00	confirmed	1900	2	PEARS CONFERENCE BELGIUM 12KG
 b9ab1eee-fca7-4517-a843-d358e15a4dcb	dole wholesale gateshead	GRAPE JACK SALUTE SOUTH AFRICA 10X500G EXSER 5KG .	df8d618e-d7da-4755-b47c-b89217b80d50	13ffd63f-768b-42f2-b487-2238df8fba1b	1	2026-05-27 17:29:40.103526+00	2026-06-23 20:27:39.917403+00	count	10	\N	confirmed	1600	3	GRAPE JACK SALUTE SOUTH AFRICA 10X500G EXSER 5KG
-b2cce900-db60-42bb-a07f-2b56f2d508a5	jr holland	CUCUMBERS - X16 DUTCH	2af52c0b-c9cd-4b96-bed0-744a8240032c	\N	8	2026-06-09 07:36:59.349281+00	2026-06-24 07:58:32.376291+00	count	16	\N	confirmed	520	1	CUCUMBERS - X16 DUTCH
 fd056c78-7565-44c2-8fc3-525d73794aa8	jr holland	DUTCH TOMATOES - DUTCH BLACK BOX	f1ecc381-a61e-4c97-b231-b34133f7d69d	\N	1	2026-06-01 05:02:57.821083+00	2026-06-24 16:13:38.547975+00	weight	\N	6.00	confirmed	700	1	DUTCH TOMATOES - DUTCH BLACK BOX
 379009b4-2a07-42ad-870e-18d293de8031	jr holland	RED CABBAGE - 25 KILO DUTCH	31a26376-6be8-499d-81cc-fac9e140bc11	\N	1	2026-06-18 07:45:54.296602+00	2026-06-23 20:27:39.917403+00	weight	\N	25.00	confirmed	1050	1	RED CABBAGE - 25 KILO DUTCH
 8489e2aa-f579-42c9-a9c9-3d7a5a2e008d	jr holland	CARROTS - FRENCH	69e73158-0fa9-4af1-8d95-b90122512e1d	\N	2	2026-06-11 07:34:46.70046+00	2026-06-23 20:27:39.917403+00	weight	\N	10.00	confirmed	780	1	CARROTS - FRENCH
@@ -12891,6 +12947,7 @@ cccb0b1a-3e7a-4b93-a15e-d2089c7cd228	jr holland	SPANISH TOMATOES - BONNY M	f1ecc
 26620a1a-e469-4dc9-8995-39eed570671b	jr holland	SPANISH TOMATOES - 2M BLACK BOX MAROC	f1ecc381-a61e-4c97-b231-b34133f7d69d	\N	1	2026-05-27 20:40:13.835168+00	2026-06-24 16:13:38.547975+00	weight	\N	6.00	confirmed	950	1	SPANISH TOMATOES - 2M BLACK BOX MAROC
 9494b636-7918-45cb-986e-59a33300af1d	jr holland	VINE TOMATOES - SENSATION DUTCH	50e18db9-c0bc-4df2-8ebb-f6bdf1f979ef	\N	2	2026-05-27 20:40:09.726233+00	2026-06-24 16:13:38.547975+00	weight	\N	5.00	confirmed	700	2	VINE TOMATOES - SENSATION DUTCH
 685323fa-c995-4552-8713-cf2ee58a0254	jr holland	DUTCH TOMATOES - BLACK LARGE UK	f1ecc381-a61e-4c97-b231-b34133f7d69d	\N	1	2026-05-27 20:40:16.203882+00	2026-06-24 16:13:38.547975+00	weight	\N	6.00	confirmed	700	1	DUTCH TOMATOES - BLACK LARGE UK
+b2cce900-db60-42bb-a07f-2b56f2d508a5	jr holland	CUCUMBERS - X16 DUTCH	2af52c0b-c9cd-4b96-bed0-744a8240032c	\N	9	2026-06-09 07:36:59.349281+00	2026-06-25 01:48:50.301697+00	count	16	\N	confirmed	520	1	CUCUMBERS - X16 DUTCH
 80767775-b517-4942-bd27-64f06f948c42	total produce	CHERRY. SPAIN 28 2KG.	32676293-0cea-4a21-8df2-160b3b072050	\N	2	2026-06-10 08:03:48.082413+00	2026-06-23 20:27:39.917403+00	count	28	\N	confirmed	700	2	CHERRY SPAIN 28 2KG
 dee824e0-0641-4314-9f08-592be82cf5a0	jr holland	ORANGE PEPPERS - UK BLACK BOX	81e4479c-dfaf-4d8b-8f7f-d63bade35e6b	\N	1	2026-05-27 20:40:18.008668+00	2026-06-24 17:17:23.425765+00	count	\N	\N	confirmed	900	1	ORANGE PEPPERS - UK BLACK BOX
 d493f2e1-62b0-4c8d-921c-aca761478011	jr holland	ORANGE PEPPERS - DUTCH	81e4479c-dfaf-4d8b-8f7f-d63bade35e6b	\N	1	2026-05-27 20:40:19.845088+00	2026-06-24 17:17:23.425765+00	count	\N	\N	confirmed	750	1	ORANGE PEPPERS - DUTCH
@@ -12990,6 +13047,7 @@ ce351c24-83bf-4cb4-813d-37baf29b4270	dole wholesale gateshead	MUSHROOM BUTTON PL
 441e6d2c-54d6-4da3-a2f7-fa772f89e4f4	dole wholesale gateshead	WATERMELON . SPAIN 7 . .	1c6cc1d4-7705-4692-8447-eeb815b9a4e1	\N	1	2026-05-27 17:29:46.923538+00	2026-06-23 20:27:39.917403+00	count	6	\N	confirmed	2000	2	WATERMELON SPAIN 7
 c9ebf5d2-9a6d-4752-880d-ab87556af146	total produce	ONION. SPAIN 1 20KG,	65db7885-df5d-4330-99d1-959c433f6fd5	\N	1	2026-06-18 13:10:23.923821+00	2026-06-23 20:27:39.917403+00	weight	\N	20.00	confirmed	\N	3	ONION SPAIN 1 20KG
 07c565fd-0434-4aca-96a1-5f7cb603b396	total produce	GRAPE FLAME EGYPT. 4.5KG.	df8d618e-d7da-4755-b47c-b89217b80d50	\N	1	2026-06-18 13:10:23.891747+00	2026-06-23 20:27:39.917403+00	count	9	\N	confirmed	\N	2	GRAPE FLAME EGYPT 4.5KG
+6784e9cf-e1d1-46ba-a82d-ced4e07f39d8	jr holland	RED PEPPERS - UK LARGE	e3e632c9-89f5-4e03-8b3d-010b6b9baf5c	\N	1	2026-06-25 01:48:50.332053+00	2026-06-25 01:48:50.332053+00	count	1	\N	confirmed	1300	1	RED PEPPERS - UK LARGE
 77c81eb1-7251-48ee-8517-14ebad7f18c0	dole wholesale gateshead	APPLE JOYA FRANCE 84 12KG .	a7ffe61b-7b35-4a8c-bc6c-3c73b4902954	13ffd63f-768b-42f2-b487-2238df8fba1b	1	2026-05-27 17:29:47.086209+00	2026-06-23 20:27:39.917403+00	weight	\N	12.00	confirmed	1750	2	APPLE JOYA FRANCE 84 12KG
 9e5486b4-1fdd-485c-8b95-18751d6f5389	dole wholesale gateshead	CUCUMBER . CANARY ISLAND 12S 50/60 5KG .	2af52c0b-c9cd-4b96-bed0-744a8240032c	13ffd63f-768b-42f2-b487-2238df8fba1b	1	2026-05-27 17:29:47.826549+00	2026-06-23 20:27:39.917403+00	count	14	5.00	confirmed	660	2	CUCUMBER CANARY ISLAND 12S 50/60 5KG
 d1c66e8b-a833-4df2-84d2-9f22c11c38c8	dole wholesale gateshead	GRAPE SUGARONE EG 10X500G 5KG PREPACKED	\N	\N	1	2026-05-27 17:29:47.263408+00	2026-06-23 20:27:39.917403+00	count	10	\N	confirmed	2000	2	GRAPE SUGARONE EG 10X500G 5KG PREPACKED
@@ -13011,6 +13069,7 @@ ba733c3c-de56-4027-bc0e-e0969621add4	dole wholesale gateshead	POMEGRANATE . SPAI
 6b1789cb-2366-4d1a-8b00-5b1fb911241f	jr holland	RED CABBAGE - SMALL BAGS	31a26376-6be8-499d-81cc-fac9e140bc11	\N	1	2026-06-10 08:06:53.941471+00	2026-06-23 20:27:39.917403+00	weight	\N	10.00	confirmed	500	1	RED CABBAGE - SMALL BAGS
 5efa7cc1-2c54-4ed4-b0be-2acbd81a5e23	total produce	LEMON SOUTH AFRICA 36 6KG.	e2838162-83b6-41d9-85c2-d04f4f445967	\N	1	2026-06-11 07:55:05.290097+00	2026-06-23 20:27:39.917403+00	count	36	\N	confirmed	1150	1	LEMON SOUTH AFRICA 36 6KG
 56f9a501-718a-4234-a7d3-88a1ed485d9a	total produce	BANANA. COSTA RICA. 18KG.	d85d0d21-166f-4fcb-967d-df877ee9b56a	\N	9	2026-06-11 07:55:05.314209+00	2026-06-24 02:24:52.007273+00	weight	\N	18.00	confirmed	1850	1	BANANA COSTA RICA 18KG
+5358e7ea-8213-42c5-aa99-991f968003a1	jr holland	MIXED PEPPERS - DUTCH TRI COLOURS	cd6a5b06-81e9-4703-8a08-baeb6a504439	\N	1	2026-06-25 01:48:50.351242+00	2026-06-25 01:48:50.351242+00	count	1	\N	confirmed	1450	1	MIXED PEPPERS - DUTCH TRI COLOURS
 55e8cd03-3d92-472c-afef-7c1eade3b9a7	dole wholesale gateshead	PLUM . ES 10X500G 5KG PREPACKED	72006aef-fabd-425e-bca7-439587c674b1	\N	1	2026-05-27 17:29:32.389541+00	2026-06-23 20:27:39.917403+00	count	10	\N	confirmed	1000	3	PLUM ES 10X500G 5KG PREPACKED
 75a0d6dc-64f5-4ddb-a4b8-51ef2b923245	dole wholesale gateshead	POTATO SAGITTA UK . 25KG BAG	8be94809-6c19-4f8e-b797-fe83416f4458	13ffd63f-768b-42f2-b487-2238df8fba1b	1	2026-05-27 17:29:48.330061+00	2026-06-23 20:27:39.917403+00	weight	\N	25.00	confirmed	700	2	POTATO SAGITTA UK 25KG BAG
 e3a3846c-077a-4a2b-a276-662661296f3b	total produce	AVOCADO HASS MX. 10KG.	8314af80-11a7-4d27-a9d1-ca00943886f5	\N	1	2026-06-18 08:25:21.161834+00	2026-06-23 20:27:39.917403+00	weight	\N	10.00	confirmed	800	1	AVOCADO HASS MX 10KG
@@ -13027,6 +13086,7 @@ ed11f6e4-5c62-44c7-a672-5165753e5939	dole wholesale gateshead	ORANGE NAVEL SOUTH
 0cbcf22c-dfea-4915-b6b0-edfad5ce819d	dole wholesale gateshead	POMEGRANATE . ZA 12 5KG .	b3b40799-e152-443b-b65e-21c530579670	\N	1	2026-05-27 17:29:31.297064+00	2026-06-23 20:27:39.917403+00	weight	\N	5.00	confirmed	1400	4	POMEGRANATE ZA 12 5KG
 ede5473e-fb65-430a-824e-9ab67012fdf3	dole wholesale gateshead	DATE MEDJOUL JO . 5KG BOXED	c899cad1-dc28-4ef2-bcad-63203d5f9743	13ffd63f-768b-42f2-b487-2238df8fba1b	1	2026-05-27 17:29:31.202478+00	2026-06-23 20:27:39.917403+00	weight	\N	5.00	confirmed	2900	4	DATE MEDJOUL JO 5KG BOXED
 1a8eadda-4239-4afe-9b32-fb3d5860bc5a	dole wholesale gateshead	GARLIC PEELED CN . . SINGLE	714aac99-97c1-4358-a82c-2b08f06437da	13ffd63f-768b-42f2-b487-2238df8fba1b	1	2026-05-27 17:29:39.833716+00	2026-06-23 20:27:39.917403+00	count	1	\N	confirmed	300	3	GARLIC PEELED CN SINGLE
+8372c0d5-3f1d-44e4-95f1-e511fd6ea716	jr holland	CHERRY TOMATOES - DUTCH X9	c414ebb1-1d91-46d8-afa3-3962b1d20cdb	\N	1	2026-06-25 01:48:50.372901+00	2026-06-25 01:48:50.372901+00	count	9	\N	confirmed	480	1	CHERRY TOMATOES - DUTCH X9
 4cd9c99d-41f4-4fc6-b7af-bc2457f0299d	jr holland	KOHLRABI - BOX	2909b1af-bfcf-45cb-80ed-c197d2a8e80f	\N	2	2026-06-10 08:08:00.811478+00	2026-06-23 20:27:39.917403+00	weight	\N	8.00	confirmed	1700	1	KOHLRABI - BOX
 efb10746-e3f1-4738-a3b6-eb263fb80151	dole wholesale gateshead	GRAPE VITORIA BR 10X500G . PREPACKED	df8d618e-d7da-4755-b47c-b89217b80d50	13ffd63f-768b-42f2-b487-2238df8fba1b	1	2026-05-27 17:29:35.27428+00	2026-06-23 20:27:39.917403+00	count	10	\N	confirmed	1400	2	GRAPE VITORIA BR 10X500G PREPACKED
 75635410-ea0a-4294-aaaa-b5a35d3bcf6c	dole wholesale gateshead	MELON HONEYDEW BR 6 10KG .	ed61eae5-7212-4ab0-8b27-a0a267e3936b	\N	1	2026-05-27 17:29:35.547217+00	2026-06-23 20:27:39.917403+00	weight	\N	10.00	confirmed	750	3	MELON HONEYDEW BR 6 10KG
@@ -13456,7 +13516,6 @@ d2d670d8-58db-496a-9382-f9d988bf4a28	dole wholesale gateshead	LIMES . BRAZIL 54 
 07f5ef2e-63bd-4602-98bd-e1070fc02101	jr holland	COS LETTUCE - X10 BLUE BOX	b7ccbf69-3654-4bad-8e34-66c0057dd8c9	\N	1	2026-05-27 20:40:20.006462+00	2026-06-23 20:27:39.917403+00	count	10	\N	confirmed	700	1	COS LETTUCE - X10 BLUE BOX
 68ba4d7a-98ff-4a48-b4c3-7e7823ee4430	jr holland	CHINESE LEAF - X8 GS UK	adcb81b3-6477-4595-8bef-0977eb5cc5c0	\N	1	2026-05-27 20:40:20.093342+00	2026-06-23 20:27:39.917403+00	count	8	\N	confirmed	850	1	CHINESE LEAF - X8 GS UK
 e5d13c79-b9d7-4baf-8f2e-8343bfb91491	jr holland	KIWI FRUIT - DRAGON FRUIT XL	9aaf97d9-8de5-4077-954d-e649f084c29b	\N	1	2026-05-27 20:40:20.174307+00	2026-06-23 20:27:39.917403+00	\N	\N	\N	confirmed	280	1	KIWI FRUIT - DRAGON FRUIT XL
-0319f1fc-6ebf-4967-a012-048ae625d6b8	jr holland	MUSHROOM - PP X12	7d48b88d-6791-4182-b624-8f58b303035e	\N	1	2026-05-27 20:40:20.430596+00	2026-06-23 20:27:39.917403+00	count	12	\N	confirmed	840	1	MUSHROOM - PP X12
 153a0703-270c-4bb1-a9aa-53c998d697bb	total produce	MELON WATER SPAIN 5 16KG.	1c6cc1d4-7705-4692-8447-eeb815b9a4e1	\N	1	2026-06-19 08:49:14.238084+00	2026-06-23 20:27:39.917403+00	count	5	\N	confirmed	1200	1	MELON WATER SPAIN 5 16KG
 02573173-50e9-431f-bc04-1b91fe83910b	jr holland	COURGETTES - DUTCH YELLOW	e4be8932-840d-4a2f-81dd-340f834cfc6c	\N	1	2026-05-27 20:40:19.611352+00	2026-06-23 20:27:39.917403+00	weight	\N	5.00	confirmed	800	1	COURGETTES - DUTCH YELLOW
 06e8a50c-55fc-46b4-95b4-90fddfe7010b	jr holland	CUCUMBERS - UK X12	2af52c0b-c9cd-4b96-bed0-744a8240032c	\N	1	2026-05-27 20:40:19.349096+00	2026-06-23 20:27:39.917403+00	count	12	\N	confirmed	500	1	CUCUMBERS - UK X12
@@ -13469,6 +13528,7 @@ a336324a-e3d2-4b19-a299-0d8d8bc1ef46	jr holland	AVOCADOS - RTE GREY/BLACK BOX	83
 9822d2c7-44c2-48c5-9d9f-7ad957e65e0c	jr holland	ORANGE PEPPERS - DUTCH MED	81e4479c-dfaf-4d8b-8f7f-d63bade35e6b	\N	1	2026-05-27 20:40:14.772289+00	2026-06-24 17:17:23.425765+00	count	\N	\N	confirmed	700	1	ORANGE PEPPERS - DUTCH MED
 919ece2b-a6c9-45fb-ab79-c6581cc58002	jr holland	VINE TOMATOES - ESLY	50e18db9-c0bc-4df2-8ebb-f6bdf1f979ef	\N	1	2026-05-27 20:40:13.257258+00	2026-06-24 18:02:13.025674+00	weight	\N	5.00	confirmed	700	1	VINE TOMATOES - ESLY
 d8937511-2879-4c3f-b7e1-f55ac1152174	jr holland	VINE TOMATOES - CLASSICO	50e18db9-c0bc-4df2-8ebb-f6bdf1f979ef	\N	1	2026-05-27 20:40:16.028181+00	2026-06-24 18:02:13.025674+00	weight	\N	5.00	confirmed	450	1	VINE TOMATOES - CLASSICO
+0319f1fc-6ebf-4967-a012-048ae625d6b8	jr holland	MUSHROOM - PP X12	7d48b88d-6791-4182-b624-8f58b303035e	\N	2	2026-05-27 20:40:20.430596+00	2026-06-25 01:48:50.313205+00	count	12	\N	confirmed	840	1	MUSHROOM - PP X12
 ad978d6d-4d99-4565-876d-65f795c74fbb	dole wholesale gateshead	APPLE BRAEBURN UK . 12KG .	20b47941-4381-4647-a9da-7a7506c93c33	\N	1	2026-05-27 17:29:14.010834+00	2026-06-23 20:27:39.917403+00	weight	\N	12.00	confirmed	1800	10	APPLE BRAEBURN UK 12KG
 276a09e3-e6f3-494a-a924-c5480db40a2f	dole wholesale gateshead	MELON WATER SPAIN 3 . .	1c6cc1d4-7705-4692-8447-eeb815b9a4e1	\N	1	2026-05-27 17:29:14.895492+00	2026-06-23 20:27:39.917403+00	count	3	\N	confirmed	1600	10	MELON WATER SPAIN 3
 4b15b345-600c-47b3-a90a-afc1c42883bd	dole wholesale gateshead	POMELO . CHINA 11 . .	bfa0dc55-95ba-4554-ab06-f1d1f1b549e1	\N	1	2026-05-27 17:29:12.110763+00	2026-06-23 20:27:39.917403+00	count	11	\N	confirmed	1200	9	POMELO CHINA 11
@@ -14159,8 +14219,8 @@ c6900937-44be-44c3-8b1d-4ee64f04bd8e	19a83aeb-0126-4fe9-ac98-50c4841c18bb	6ca074
 -- Data for Name: till_transactions; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
-COPY public.till_transactions (id, created_at, total_pence, payment_method, cash_tendered_pence, change_pence, status) FROM stdin;
-19a83aeb-0126-4fe9-ac98-50c4841c18bb	2026-06-08 22:27:42.98795+00	848	card	\N	\N	completed
+COPY public.till_transactions (id, created_at, total_pence, payment_method, cash_tendered_pence, change_pence, status, client_uuid) FROM stdin;
+19a83aeb-0126-4fe9-ac98-50c4841c18bb	2026-06-08 22:27:42.98795+00	848	card	\N	\N	completed	\N
 \.
 
 
@@ -15022,7 +15082,7 @@ COPY vault.secrets (id, name, description, secret, key_id, nonce, created_at, up
 -- Name: refresh_tokens_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: supabase_auth_admin
 --
 
-SELECT pg_catalog.setval('auth.refresh_tokens_id_seq', 164, true);
+SELECT pg_catalog.setval('auth.refresh_tokens_id_seq', 165, true);
 
 
 --
@@ -15384,6 +15444,14 @@ ALTER TABLE ONLY public.price_suggestions
 
 
 --
+-- Name: product_epos_aliases product_epos_aliases_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.product_epos_aliases
+    ADD CONSTRAINT product_epos_aliases_pkey PRIMARY KEY (epos_product_id);
+
+
+--
 -- Name: product_seasonal_averages product_seasonal_averages_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -15421,22 +15489,6 @@ ALTER TABLE ONLY public.purchase_invoice_items
 
 ALTER TABLE ONLY public.purchase_invoices
     ADD CONSTRAINT purchase_invoices_pkey PRIMARY KEY (id);
-
-
---
--- Name: purchase_suppliers purchase_suppliers_name_key; Type: CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.purchase_suppliers
-    ADD CONSTRAINT purchase_suppliers_name_key UNIQUE (name);
-
-
---
--- Name: purchase_suppliers purchase_suppliers_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.purchase_suppliers
-    ADD CONSTRAINT purchase_suppliers_pkey PRIMARY KEY (id);
 
 
 --
@@ -16054,6 +16106,13 @@ CREATE INDEX idx_price_history_prod ON public.price_history USING btree (product
 
 
 --
+-- Name: idx_product_epos_aliases_product; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_product_epos_aliases_product ON public.product_epos_aliases USING btree (product_id);
+
+
+--
 -- Name: idx_products_active; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -16226,6 +16285,20 @@ CREATE INDEX idx_wholesale_payments_invoice ON public.wholesale_payments USING b
 --
 
 CREATE UNIQUE INDEX products_epos_now_id_uniq ON public.products USING btree (epos_now_id) WHERE (epos_now_id IS NOT NULL);
+
+
+--
+-- Name: products_plu_code_key; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE UNIQUE INDEX products_plu_code_key ON public.products USING btree (plu_code) WHERE (plu_code IS NOT NULL);
+
+
+--
+-- Name: till_transactions_client_uuid_key; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE UNIQUE INDEX till_transactions_client_uuid_key ON public.till_transactions USING btree (client_uuid) WHERE (client_uuid IS NOT NULL);
 
 
 --
@@ -16558,6 +16631,14 @@ ALTER TABLE ONLY public.price_suggestions
 
 
 --
+-- Name: product_epos_aliases product_epos_aliases_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.product_epos_aliases
+    ADD CONSTRAINT product_epos_aliases_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE CASCADE;
+
+
+--
 -- Name: product_seasonal_averages product_seasonal_averages_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -16586,7 +16667,7 @@ ALTER TABLE ONLY public.product_suppliers
 --
 
 ALTER TABLE ONLY public.products
-    ADD CONSTRAINT products_default_supplier_id_fkey FOREIGN KEY (default_supplier_id) REFERENCES public.purchase_suppliers(id);
+    ADD CONSTRAINT products_default_supplier_id_fkey FOREIGN KEY (default_supplier_id) REFERENCES public.suppliers(id);
 
 
 --
@@ -16898,13 +16979,6 @@ CREATE POLICY "authenticated reads products" ON public.products FOR SELECT USING
 
 
 --
--- Name: purchase_suppliers authenticated reads purchase_suppliers; Type: POLICY; Schema: public; Owner: postgres
---
-
-CREATE POLICY "authenticated reads purchase_suppliers" ON public.purchase_suppliers FOR SELECT USING ((auth.role() = 'authenticated'::text));
-
-
---
 -- Name: suppliers authenticated reads suppliers; Type: POLICY; Schema: public; Owner: postgres
 --
 
@@ -16991,13 +17065,6 @@ CREATE POLICY "owner manages product_suppliers" ON public.product_suppliers USIN
 --
 
 CREATE POLICY "owner manages products" ON public.products USING ((public.current_user_role() = 'owner'::public.user_role));
-
-
---
--- Name: purchase_suppliers owner manages purchase_suppliers; Type: POLICY; Schema: public; Owner: postgres
---
-
-CREATE POLICY "owner manages purchase_suppliers" ON public.purchase_suppliers USING ((public.current_user_role() = 'owner'::public.user_role));
 
 
 --
@@ -17227,12 +17294,6 @@ ALTER TABLE public.purchase_invoice_items ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.purchase_invoices ENABLE ROW LEVEL SECURITY;
-
---
--- Name: purchase_suppliers; Type: ROW SECURITY; Schema: public; Owner: postgres
---
-
-ALTER TABLE public.purchase_suppliers ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: sales_data; Type: ROW SECURITY; Schema: public; Owner: postgres
@@ -18371,6 +18432,15 @@ GRANT ALL ON TABLE public.price_suggestions TO service_role;
 
 
 --
+-- Name: TABLE product_epos_aliases; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.product_epos_aliases TO anon;
+GRANT ALL ON TABLE public.product_epos_aliases TO authenticated;
+GRANT ALL ON TABLE public.product_epos_aliases TO service_role;
+
+
+--
 -- Name: TABLE purchase_invoice_items; Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -18440,15 +18510,6 @@ GRANT ALL ON TABLE public.products TO service_role;
 GRANT MAINTAIN ON TABLE public.product_weighted_costs TO anon;
 GRANT SELECT,MAINTAIN ON TABLE public.product_weighted_costs TO authenticated;
 GRANT ALL ON TABLE public.product_weighted_costs TO service_role;
-
-
---
--- Name: TABLE purchase_suppliers; Type: ACL; Schema: public; Owner: postgres
---
-
-GRANT ALL ON TABLE public.purchase_suppliers TO anon;
-GRANT ALL ON TABLE public.purchase_suppliers TO authenticated;
-GRANT ALL ON TABLE public.purchase_suppliers TO service_role;
 
 
 --
@@ -18949,5 +19010,5 @@ ALTER EVENT TRIGGER pgrst_drop_watch OWNER TO supabase_admin;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict mmwUd026XhEJDK2WO2zGw1aRpI8ORYR3TGjPttdEKAlTTjLRjDSYpUD7ex79W8R
+\unrestrict 2l3ZOsRZQoeV8kg8ZqdnymyVbRqz308Df4G31gGpults2O7A8aOyen5VY5q7ymV
 
